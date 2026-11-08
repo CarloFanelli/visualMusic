@@ -1,0 +1,6 @@
+# Task Progress - point-proposals
+
+01-full-training: DONE
+02-proposal-generation: DONE
+03-confirm-proposals: DONE
+04-correct-points: DONE

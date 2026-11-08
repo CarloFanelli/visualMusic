@@ -83,7 +83,7 @@ def test_label_has_box_and_visible_points():
             {"name": "bell_centre", "x": 0.4, "y": 0.5, "visible": True},
             {"name": "bell_edge_left", "x": 0.3, "y": 0.5, "visible": True},
             {"name": "bell_edge_right", "x": 0.5, "y": 0.5, "visible": True},
-            {"name": "mouthpiece", "visible": False},
+            {"name": "neck", "visible": False},
         ],
     }
     values = [float(value) for value in export.label_line(annotation).split()]

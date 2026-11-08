@@ -18,7 +18,11 @@ def is_ignored(path):
         "data/videos/clip.mov",
         "data/previews/photo.jpg",
         "data/export/images/train/photo.jpg",
+        "data/proposals/photo.json",
         "data/annotations/.photo.abc123.part",
+        "screenshot.jpg",
+        "docs/photo.PNG",
+        "tests/clip.Mp4",
     ],
 )
 def test_image_and_video_files_stay_out_of_git(path):

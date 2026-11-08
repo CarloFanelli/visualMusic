@@ -37,7 +37,11 @@
   #frame { position: relative; display: inline-block; line-height: 0; }
   #photo { display: block; max-width: calc(100vw - 264px); max-height: calc(100vh - 130px); cursor: crosshair; user-select: none; }
   .marker { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid #fff; border-radius: 50%; background: var(--marker); color: #fff; font-size: 12px; line-height: 18px; text-align: center; pointer-events: none; box-shadow: 0 0 2px #000; }
-  .marker.saved { opacity: .65; }
+  .marker.movable { pointer-events: auto; cursor: grab; touch-action: none; }
+  .marker.selected { outline: 3px solid var(--accent); outline-offset: 1px; }
+  #points { margin: 0; padding: 8px 12px; list-style: none; border-bottom: 1px solid var(--line); }
+  #points button { width: 100%; padding: 4px 8px; margin-bottom: 4px; font: inherit; text-align: left; cursor: pointer; }
+  #points button[aria-pressed="true"] { background: var(--accent); color: #fff; }
   [hidden] { display: none !important; }
   @media (max-width: 700px) {
     body { flex-direction: column; }
@@ -49,6 +53,7 @@
 <body>
 <aside>
   <div id="progress"></div>
+  <ol id="points" hidden></ol>
   <ul id="list"></ul>
 </aside>
 <main>
@@ -57,6 +62,7 @@
     <div id="message" aria-live="polite"></div>
     <button id="retry" type="button" hidden>Riprova a salvare</button>
     <div id="controls">
+      <button id="confirm" type="button" hidden>Conferma (Invio)</button>
       <button id="undo" type="button">Annulla</button>
       <button id="hide-point" type="button">Punto non visibile</button>
       <button id="skip" type="button">Salta</button>
@@ -75,13 +81,19 @@
 "use strict";
 
 const SYMBOLS = { pending: "[ ]", annotated: "[x]", skipped: "[~]", rejected: "[-]", unreadable: "[!]" };
+// Long enough to stop a second press of Enter from confirming an image nobody has looked at.
+const CONFIRM_DELAY_MS = 300;
+// Below this, a press on a point is a selection and not a move.
+const DRAG_THRESHOLD_PX = 3;
 
 const elements = {
   progress: document.getElementById("progress"),
   list: document.getElementById("list"),
+  points: document.getElementById("points"),
   prompt: document.getElementById("prompt"),
   message: document.getElementById("message"),
   retry: document.getElementById("retry"),
+  confirm: document.getElementById("confirm"),
   undo: document.getElementById("undo"),
   hidePoint: document.getElementById("hide-point"),
   skip: document.getElementById("skip"),
@@ -97,7 +109,11 @@ const state = {
   images: [],
   currentId: null,
   placed: [],
-  savedPoints: null,
+  reviewPoints: null,
+  reviewHistory: [],
+  selectedPoint: null,
+  loadingPoints: false,
+  shownAt: null,
   saving: false,
   retryAction: null,
 };
@@ -118,8 +134,13 @@ function annotationUrl(id) {
   return `/api/images/${encodeURIComponent(id)}/annotation`;
 }
 
+function proposalUrl(id) {
+  return `/api/images/${encodeURIComponent(id)}/proposal`;
+}
+
 function nextPending() {
-  return state.images.find((image) => image.status === "pending" && image.image_id !== state.currentId);
+  const candidates = state.images.filter((image) => image.status === "pending" && image.image_id !== state.currentId);
+  return candidates.find((image) => image.has_proposal) || candidates[0];
 }
 
 function setMessage(text, isError = false) {
@@ -132,17 +153,23 @@ function renderProgress() {
   const rejected = countOf("rejected");
   const detail = document.createElement("small");
   detail.textContent = `${annotated} annotate, ${rejected} scartate, ${countOf("skipped")} saltate`;
+  const proposed = state.images.filter((image) => image.status === "pending" && image.has_proposal).length;
+  const todo = document.createElement("small");
+  todo.textContent = `Da fare: ${proposed} con proposta, ${countOf("pending") - proposed} senza`;
   elements.progress.textContent = `Immagini: ${annotated + rejected} di ${state.images.length} completate`;
-  elements.progress.append(detail);
+  elements.progress.append(detail, todo);
 }
 
 function renderControls() {
   const current = imageById(state.currentId);
   const rejected = current?.status === "rejected";
   for (const button of [elements.undo, elements.hidePoint, elements.skip, elements.reject]) {
-    button.hidden = !current || rejected;
+    button.hidden = !current || rejected || (state.loadingPoints && (button === elements.undo || button === elements.hidePoint));
     button.disabled = state.saving;
   }
+  if (state.reviewPoints && state.selectedPoint === null) elements.hidePoint.disabled = true;
+  elements.confirm.hidden = !state.reviewPoints;
+  elements.confirm.disabled = state.saving;
   elements.restore.hidden = !rejected;
   elements.restore.disabled = state.saving;
   elements.resumeSkipped.hidden = Boolean(current) || countOf("skipped") === 0;
@@ -182,17 +209,107 @@ function markCurrentRow() {
 
 function renderMarkers() {
   for (const marker of elements.frame.querySelectorAll(".marker")) marker.remove();
-  const showingSaved = state.placed.length === 0 && state.savedPoints;
-  const points = showingSaved ? state.savedPoints : state.placed;
+  const points = state.reviewPoints || state.placed;
   points.forEach((point, index) => {
     if (!point.visible) return;
     const marker = document.createElement("div");
-    marker.className = showingSaved ? "marker saved" : "marker";
-    marker.style.left = `${point.x * 100}%`;
-    marker.style.top = `${point.y * 100}%`;
+    marker.className = "marker";
+    marker.dataset.index = String(index);
+    placeMarker(marker, point);
     marker.textContent = String(index + 1);
+    marker.classList.toggle("selected", index === state.selectedPoint);
+    // With a point selected, clicks must reach the photo even on top of a marker: nearby points are the usual case.
+    if (state.reviewPoints && state.selectedPoint === null) makeMovable(marker, index);
     elements.frame.append(marker);
   });
+}
+
+function placeMarker(marker, point) {
+  marker.style.left = `${point.x * 100}%`;
+  marker.style.top = `${point.y * 100}%`;
+}
+
+function positionOf(event) {
+  const box = elements.photo.getBoundingClientRect();
+  return { x: (event.clientX - box.left) / box.width, y: (event.clientY - box.top) / box.height };
+}
+
+function clamped(value) {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function rememberReview() {
+  state.reviewHistory.push(structuredClone(state.reviewPoints));
+}
+
+function makeMovable(marker, index) {
+  marker.classList.add("movable");
+  let start = null;
+  let moved = false;
+  marker.addEventListener("pointerdown", (event) => {
+    if (state.saving) return;
+    event.preventDefault();
+    marker.setPointerCapture(event.pointerId);
+    start = { x: event.clientX, y: event.clientY };
+    moved = false;
+  });
+  marker.addEventListener("pointermove", (event) => {
+    if (!start) return;
+    if (!moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD_PX) return;
+    if (!moved) rememberReview();
+    moved = true;
+    const { x, y } = positionOf(event);
+    Object.assign(state.reviewPoints[index], { x: clamped(x), y: clamped(y) });
+    placeMarker(marker, state.reviewPoints[index]);
+  });
+  marker.addEventListener("pointerup", () => {
+    if (!start) return;
+    start = null;
+    if (moved) {
+      state.selectedPoint = null;
+      afterReviewChange();
+    } else {
+      selectPoint(index);
+    }
+  });
+}
+
+function selectPoint(index) {
+  state.selectedPoint = state.selectedPoint === index ? null : index;
+  renderMarkers();
+  renderPointList();
+  renderControls();
+}
+
+function renderPointList() {
+  elements.points.hidden = !state.reviewPoints;
+  if (!state.reviewPoints) return;
+  elements.points.replaceChildren(...state.reviewPoints.map((point, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    const hiddenNote = point.visible ? "" : " (non visibile)";
+    button.textContent = `${index + 1} ${state.points[index].label}${hiddenNote}`;
+    button.setAttribute("aria-pressed", String(index === state.selectedPoint));
+    button.addEventListener("click", () => selectPoint(index));
+    item.append(button);
+    return item;
+  }));
+}
+
+function showNoVisiblePoints() {
+  elements.prompt.textContent = "Nessun punto visibile";
+  setMessage("Usa Non adatta per scartare l'immagine, oppure Annulla.", true);
+}
+
+function afterReviewChange() {
+  elements.retry.hidden = true;
+  setMessage("");
+  renderPrompt();
+  renderMarkers();
+  renderPointList();
+  renderControls();
+  if (!state.reviewPoints.some((point) => point.visible)) showNoVisiblePoints();
 }
 
 function renderPrompt() {
@@ -200,6 +317,10 @@ function renderPrompt() {
   const number = state.placed.length;
   if (imageById(state.currentId)?.status === "rejected") {
     elements.prompt.textContent = "Immagine scartata";
+  } else if (state.loadingPoints) {
+    elements.prompt.textContent = "Caricamento dei punti...";
+  } else if (state.reviewPoints) {
+    elements.prompt.textContent = "Controlla i punti e conferma";
   } else if (number < total) {
     elements.prompt.textContent = `Punto ${number + 1} di ${total}: ${state.points[number].label}`;
   } else {
@@ -209,6 +330,7 @@ function renderPrompt() {
 
 function showNoCurrentImage(text, hint) {
   state.currentId = null;
+  state.reviewPoints = null;
   elements.frame.hidden = true;
   elements.prompt.textContent = text;
   setMessage(hint);
@@ -227,31 +349,60 @@ function preloadNext() {
   if (next) new Image().src = imageUrl(next.image_id);
 }
 
+function noteIfShown() {
+  if (state.reviewPoints && elements.photo.complete && state.shownAt === null) {
+    state.shownAt = performance.now();
+  }
+}
+
+async function loadReviewPoints(id, annotated) {
+  try {
+    const response = await fetch(annotated ? annotationUrl(id) : proposalUrl(id));
+    if (!response.ok) throw new Error(`errore ${response.status}`);
+    const data = await response.json();
+    if (state.currentId !== id) return;
+    state.reviewPoints = annotated ? data.annotation?.points ?? null : data.proposal;
+    if (!annotated) {
+      imageById(id).has_proposal = Boolean(data.proposal);
+    } else if (state.reviewPoints) {
+      setMessage("Immagine già salvata: sposta i punti e conferma.");
+    }
+  } catch (error) {
+    if (state.currentId !== id) return;
+    setMessage(`Punti non disponibili (${error.message}): segnali a mano.`);
+  }
+  state.loadingPoints = false;
+  noteIfShown();
+  renderProgress();
+  renderPrompt();
+  renderMarkers();
+  renderPointList();
+  renderControls();
+}
+
 async function openImage(id) {
+  const image = imageById(id);
+  const annotated = image.status === "annotated";
+  const usesProposal = image.has_proposal && (image.status === "pending" || image.status === "skipped");
   state.currentId = id;
   state.placed = [];
-  state.savedPoints = null;
+  state.reviewPoints = null;
+  state.reviewHistory = [];
+  state.selectedPoint = null;
+  state.shownAt = null;
+  state.loadingPoints = annotated || usesProposal;
   elements.retry.hidden = true;
   setMessage("");
   markCurrentRow();
   renderPrompt();
   renderMarkers();
+  renderPointList();
   renderControls();
   elements.frame.hidden = false;
   elements.photo.src = imageUrl(id);
   preloadNext();
 
-  if (imageById(id).status === "annotated") {
-    setMessage("Immagine già salvata: clicca per rifare i punti.");
-    const response = await fetch(annotationUrl(id));
-    if (response.ok && state.currentId === id) {
-      const { annotation } = await response.json();
-      if (annotation) {
-        state.savedPoints = annotation.points;
-        renderMarkers();
-      }
-    }
-  }
+  if (annotated || usesProposal) await loadReviewPoints(id, annotated);
 }
 
 function openNext() {
@@ -263,10 +414,10 @@ function openNext() {
   }
 }
 
-async function store(body, afterSaved) {
+async function store(body, afterSaved, retry = () => store(body, afterSaved)) {
   const id = state.currentId;
   state.saving = true;
-  state.retryAction = () => store(body, afterSaved);
+  state.retryAction = retry;
   elements.retry.hidden = true;
   setMessage("");
   renderControls();
@@ -299,36 +450,67 @@ function afterPointChange() {
   if (state.placed.some((point) => point.visible)) {
     store({ status: "annotated", points: state.placed }, openNext);
   } else {
-    elements.prompt.textContent = "Nessun punto visibile";
-    setMessage("Usa Non adatta per scartare l'immagine, oppure Annulla.", true);
+    showNoVisiblePoints();
   }
 }
 
 function canPlacePoint() {
   // Until the next image loads, the browser keeps showing the previous one.
   return !state.saving
+    && !state.reviewPoints
+    && !state.loadingPoints
     && elements.photo.complete
     && state.placed.length < state.points.length
     && imageById(state.currentId)?.status !== "rejected";
 }
 
+function moveSelectedPoint(x, y) {
+  if (state.saving || state.selectedPoint === null || !elements.photo.complete) return;
+  rememberReview();
+  const name = state.reviewPoints[state.selectedPoint].name;
+  state.reviewPoints[state.selectedPoint] = { name, x, y, visible: true };
+  state.selectedPoint = null;
+  afterReviewChange();
+}
+
 elements.photo.addEventListener("click", (event) => {
-  if (!canPlacePoint()) return;
-  const box = elements.photo.getBoundingClientRect();
-  const x = (event.clientX - box.left) / box.width;
-  const y = (event.clientY - box.top) / box.height;
+  const { x, y } = positionOf(event);
   if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  if (state.reviewPoints) {
+    moveSelectedPoint(x, y);
+    return;
+  }
+  if (!canPlacePoint()) return;
   state.placed.push({ name: state.points[state.placed.length].name, x, y, visible: true });
   afterPointChange();
 });
 
+function hideSelectedPoint() {
+  rememberReview();
+  const name = state.reviewPoints[state.selectedPoint].name;
+  state.reviewPoints[state.selectedPoint] = { name, visible: false };
+  state.selectedPoint = null;
+  afterReviewChange();
+}
+
 elements.hidePoint.addEventListener("click", () => {
+  if (state.reviewPoints) {
+    if (!state.saving && state.selectedPoint !== null) hideSelectedPoint();
+    return;
+  }
   if (!canPlacePoint()) return;
   state.placed.push({ name: state.points[state.placed.length].name, visible: false });
   afterPointChange();
 });
 
 elements.undo.addEventListener("click", () => {
+  if (state.reviewPoints) {
+    if (state.saving || state.reviewHistory.length === 0) return;
+    state.reviewPoints = state.reviewHistory.pop();
+    state.selectedPoint = null;
+    afterReviewChange();
+    return;
+  }
   if (state.saving || state.placed.length === 0) return;
   state.placed.pop();
   elements.retry.hidden = true;
@@ -336,6 +518,24 @@ elements.undo.addEventListener("click", () => {
   renderMarkers();
   renderPrompt();
 });
+
+function confirmReview() {
+  const shownLongEnough = state.shownAt !== null && performance.now() - state.shownAt >= CONFIRM_DELAY_MS;
+  if (state.saving || !state.reviewPoints || !elements.photo.complete || !shownLongEnough) return;
+  if (!state.reviewPoints.some((point) => point.visible)) return;
+  store({ status: "annotated", points: state.reviewPoints }, openNext, confirmReview);
+}
+
+elements.confirm.addEventListener("click", confirmReview);
+
+// Enter must never activate a focused button: the one just used would fire on the next image.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  if (!event.repeat) confirmReview();
+});
+
+elements.photo.addEventListener("load", noteIfShown);
 
 elements.skip.addEventListener("click", () => store({ status: "skipped" }, openNext));
 elements.reject.addEventListener("click", () => store({ status: "rejected" }, openNext));
@@ -351,6 +551,7 @@ elements.photo.addEventListener("error", () => {
   if (!image) return;
   image.status = "unreadable";
   updateRow(image.image_id);
+  renderProgress();
   openNext();
 });
 

@@ -4,7 +4,7 @@
     {"name": "bell_centre", "label": "centro campana"},
     {"name": "bell_edge_left", "label": "bordo sinistro"},
     {"name": "bell_edge_right", "label": "bordo destro"},
-    {"name": "mouthpiece", "label": "bocchino"}
+    {"name": "neck", "label": "kiver"}
   ],
   "mirror_pairs": [["bell_edge_left", "bell_edge_right"]]
 }

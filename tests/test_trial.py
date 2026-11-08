@@ -63,7 +63,7 @@ def reset_fake():
 
 
 def test_missing_dataset_stops_and_names_the_export_command(tmp_path):
-    with pytest.raises(trial.TrialError, match="dataset_tools.export"):
+    with pytest.raises(trial.TrainingError, match="dataset_tools.export"):
         trial.run(tmp_path / "none" / "data.yaml", tmp_path / "runs", FakeModel, "cpu")
     assert FakeModel.instances == []
 

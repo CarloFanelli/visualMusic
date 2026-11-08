@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlsplit
 
 from PIL import Image, ImageOps
 
-from dataset_tools import annotations, manifest, paths
+from dataset_tools import annotations, manifest, paths, proposals
 from dataset_tools import instrument as instrument_module
 
 HOST = "127.0.0.1"
@@ -25,6 +25,7 @@ class Storage:
     annotations_dir: Path = paths.ANNOTATIONS
     images_dir: Path = paths.IMAGES
     previews_dir: Path = paths.PREVIEWS
+    proposals_dir: Path = paths.PROPOSALS
 
 
 def create_preview(source, destination):
@@ -67,11 +68,16 @@ class Handler(BaseHTTPRequestHandler):
     def _records(self):
         return {record["image_id"]: record for record in manifest.load(self.storage.manifest_path, repair=False)}
 
+    def _proposal(self, image_id):
+        return proposals.load(image_id, self.instrument, self.storage.proposals_dir)
+
     def _state(self):
         images = [
             {
                 "image_id": image_id,
                 "status": annotations.status_of(annotations.load(image_id, self.storage.annotations_dir), self.instrument),
+                # Independent of the status, so an image that is restored regains its proposal.
+                "has_proposal": self._proposal(image_id) is not None,
             }
             for image_id in self._records()
         ]
@@ -103,8 +109,8 @@ class Handler(BaseHTTPRequestHandler):
             return "state", None, None
         if len(parts) == 2 and parts[0] == "images":
             image_id, kind = parts[1], "preview"
-        elif len(parts) == 4 and parts[:2] == ["api", "images"] and parts[3] == "annotation":
-            image_id, kind = parts[2], "annotation"
+        elif len(parts) == 4 and parts[:2] == ["api", "images"] and parts[3] in {"annotation", "proposal"}:
+            image_id, kind = parts[2], parts[3]
         else:
             return None, None, None
         record = self._records().get(image_id)
@@ -123,6 +129,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_preview(image_id, record)
         elif kind == "annotation":
             self._send_annotation(image_id)
+        elif kind == "proposal":
+            self._send_json(200, {"proposal": self._proposal(image_id)})
         else:
             self._send_json(404, {"error": "not found"})
 

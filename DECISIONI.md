@@ -24,3 +24,9 @@ Questo file registra solo ciò che è stato deciso o richiesto dall'utente.
 | 2026-11-08 | La prima parte di lavoro finisce con il dataset annotato e un breve addestramento di prova. |
 | 2026-11-08 | Se i punti di uno strumento cambiano, le immagini già annotate tornano da riannotare senza perdere i vecchi punti. |
 | 2026-11-08 | Le prove automatiche della pagina di annotazione stanno nel progetto, con Playwright installato solo per lo sviluppo. |
+| 2026-11-08 | Il quarto punto è il kiver e non più il bocchino, che raramente è visibile: frontalmente è coperto dal kiver, curvo su alcuni sax. |
+| 2026-11-08 | Il punto kiver si segna circa sul punto più alto visibile della sua curva. |
+| 2026-11-08 | Immagini e video non vanno mai su GitHub: se ci finiscono vanno rimossi senza lasciare traccia. |
+| 2026-11-08 | Nella seconda fase la pagina mostra i punti già messi dal modello: l'utente sposta quelli sbagliati, invece di cliccarli tutti. |
+| 2026-11-08 | Le immagini si controllano una alla volta e si salvano solo con Conferma o Invio, non con una griglia di conferma multipla. |
+| 2026-11-08 | Le immagini in cui il modello non trova il sax arrivano in fondo e si segnano a mano. |

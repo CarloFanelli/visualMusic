@@ -2,10 +2,16 @@
 
 Collecting licensed images, marking points on them and exporting them for training.
 
+## Terms
+
+### Proposal
+The points a trained model suggests for one pending image. It becomes an **annotation** only when the user confirms it, so export and training never read it.
+_Avoid_: prediction, for points shown on the page; annotation, which is reserved for points the user confirmed.
+
 ## Decisions
 
 - **Point names and labels are separate**: each point has a stable English `name`, stored in annotations, and a `label`, shown to the user. Why: changing a label must not send annotated images back to pending.
-- **A reopened image is marked again in full**: the first click starts a new set of points that replaces the saved one on save, and single points cannot be moved. Why: it keeps one simple click flow for new and reopened images.
+- **A reopened image is corrected, not marked again**: it shows its saved points, which move as on a **proposal**, and nothing changes until the user confirms. Why: a small fix should not cost four clicks, and a stray click must not overwrite saved work.
 - **Skipped images wait for a button**: when pending images run out, the page shows the skipped count and a button to resume them. Why: it keeps both the return of skipped images and the completion message.
 
 ## Gotchas
@@ -16,3 +22,4 @@ Collecting licensed images, marking points on them and exporting them for traini
 - **Wikimedia limits file downloads hard**: `upload.wikimedia.org` imposed a 600-second wait when asked for one file per second, so that host needs a longer interval than the others.
 - **Delaying a page load in Playwright tests**: a sleep inside a route handler blocks Playwright itself, so the image finishes loading before the next click and the test proves nothing. Hold the route and release it after the click.
 - **Ultralytics sends usage events during training**: its `sync` setting is on by default, though no images are sent. It can be turned off with `.venv/bin/yolo settings sync=False`.
+- **The 10-epoch trial says nothing about point quality**: on the same 225 images, the neck's median error was 16% of the image after 10 epochs and 1.5% after 100. Use the trial to prove the pipeline works, and judge a model only after a full training.

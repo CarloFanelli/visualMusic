@@ -19,7 +19,7 @@ POINT_COLOR = (48, 59, 255)
 NO_DETECTION_COLOR = (0, 0, 200)
 
 
-class TrialError(Exception):
+class TrainingError(Exception):
     pass
 
 
@@ -32,19 +32,29 @@ class TrialResult:
     no_detection: int = 0
 
 
-def _train_once(data_yaml, runs_dir, model_factory, device):
+def require_dataset(data_yaml):
+    if not data_yaml.exists():
+        raise TrainingError("Exported dataset not found. Run: .venv/bin/python -m dataset_tools.export")
+
+
+def default_device():
+    return "mps" if torch.backends.mps.is_available() else "cpu"
+
+
+def _train_once(data_yaml, runs_dir, model_factory, device, epochs, run_name):
     model = model_factory(WEIGHTS)
-    model.train(data=str(data_yaml), epochs=EPOCHS, imgsz=IMAGE_SIZE, device=device, project=runs_dir, name=RUN_NAME, exist_ok=True)
+    model.train(data=str(data_yaml), epochs=epochs, imgsz=IMAGE_SIZE, device=device, project=runs_dir, name=run_name, exist_ok=True)
     return Path(model.trainer.best)
 
 
-def _train(data_yaml, runs_dir, model_factory, device):
+def train(data_yaml, runs_dir, model_factory, device, epochs, run_name):
+    """Returns the best model file and the device that actually trained it."""
     if device != "cpu":
         try:
-            return _train_once(data_yaml, runs_dir, model_factory, device), device
+            return _train_once(data_yaml, runs_dir, model_factory, device, epochs, run_name), device
         except (RuntimeError, NotImplementedError) as error:
             print(f"NOTICE: training stopped on the Apple GPU ({error}). Trying again on the CPU, which is slower.", flush=True)
-    return _train_once(data_yaml, runs_dir, model_factory, "cpu"), "cpu"
+    return _train_once(data_yaml, runs_dir, model_factory, "cpu", epochs, run_name), "cpu"
 
 
 def has_detection(result):
@@ -72,13 +82,12 @@ def draw(result):
 
 
 def run(data_yaml=paths.EXPORT / "data.yaml", runs_dir=paths.RUNS, model_factory=YOLO, device=None):
-    if not data_yaml.exists():
-        raise TrialError("Exported dataset not found. Run: .venv/bin/python -m dataset_tools.export")
-    device = device or ("mps" if torch.backends.mps.is_available() else "cpu")
+    require_dataset(data_yaml)
+    device = device or default_device()
     predictions_dir = runs_dir / RUN_NAME / "predictions"
     if predictions_dir.exists():
         shutil.rmtree(predictions_dir)
-    model_path, used_device = _train(data_yaml, runs_dir, model_factory, device)
+    model_path, used_device = train(data_yaml, runs_dir, model_factory, device, EPOCHS, RUN_NAME)
 
     predictions_dir.mkdir(parents=True)
     result = TrialResult(model_path, predictions_dir, used_device)
@@ -96,7 +105,7 @@ def run(data_yaml=paths.EXPORT / "data.yaml", runs_dir=paths.RUNS, model_factory
 def main():
     try:
         result = run()
-    except (TrialError, RuntimeError) as error:
+    except (TrainingError, RuntimeError) as error:
         print(f"Trial stopped: {error}")
         return 1
     print(f"Model saved to {result.model_path}")

@@ -17,7 +17,7 @@ def complete_annotation(instrument=SAX):
 
 
 def test_project_definition_lists_the_four_points_in_click_order():
-    assert SAX.point_names == ("bell_centre", "bell_edge_left", "bell_edge_right", "mouthpiece")
+    assert SAX.point_names == ("bell_centre", "bell_edge_left", "bell_edge_right", "neck")
 
 
 @pytest.mark.parametrize(

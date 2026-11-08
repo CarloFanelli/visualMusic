@@ -56,13 +56,15 @@ Downloads missing online-sourced images listed in the manifest. A file is kept o
 
 ## Mark the points
 
-Starts a page reachable only from this computer. Click the requested points in order: each image saves automatically and the next one opens. Stop with Ctrl+C at any time and start again later to resume.
+Starts a page reachable only from this computer. Images with a proposal come first: check the points already placed and press **Invio** or **Conferma** to save and open the next one. Nothing is saved until you confirm. Images without a proposal come afterwards: click the requested points in order, and each image saves automatically. Stop with Ctrl+C at any time and start again later to resume.
 
 ```shell
 .venv/bin/python -m dataset_tools.annotate.server
 ```
 
-Use **Annulla** to remove the last point, **Punto non visibile** for a hidden point, **Salta** to postpone an image, and **Non adatta** to discard it, for example a soprano, several saxophones or no saxophone. A discarded image can be restored by opening it from the list.
+To correct a point, drag it, or select it in the list on the left and click where it belongs: the list also reaches points that overlap. Select a point and use **Punto non visibile** to hide it, and place it again to bring it back. **Annulla** reverts the last change. An annotated image reopened from the list works the same way, and stays unchanged until you confirm.
+
+While clicking by hand, **Annulla** removes the last point and **Punto non visibile** marks a hidden point. On any image, **Salta** postpones it and **Non adatta** discards it, for example a soprano, several saxophones or no saxophone. A discarded image can be restored by opening it from the list.
 
 Point names and their order are in `instruments/saxophone.json`. If you change them, images already annotated return to pending, and their old points stay stored until you annotate them again.
 
@@ -81,6 +83,24 @@ Trains briefly on the exported dataset, then draws the predicted points on the v
 ```shell
 .venv/bin/python -m dataset_tools.trial
 ```
+
+## Train the model
+
+Trains for 100 passes on the exported dataset, always starting from the base model, and saves the result as `runs/latest.pt`. This takes about 30 minutes with 225 images on an M1 Pro, and longer with more. If training fails or you stop it, the previous `runs/latest.pt` stays in use.
+
+```shell
+.venv/bin/python -m dataset_tools.train
+```
+
+## Compute the proposals
+
+Uses `runs/latest.pt` to suggest the points on every image still to be marked, including skipped ones, and shows how many got a suggestion. Run it again after a new training or collection: annotations never change, and an interrupted run keeps what it already computed.
+
+```shell
+.venv/bin/python -m dataset_tools.propose
+```
+
+Proposals stay in `data/proposals/`, are not versioned, and never reach the exported dataset.
 
 ## Data in git
 

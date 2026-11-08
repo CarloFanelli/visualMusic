@@ -5,7 +5,7 @@ import pytest
 import requests
 from PIL import Image
 
-from dataset_tools import annotations, manifest
+from dataset_tools import annotations, manifest, proposals
 from dataset_tools import instrument as instrument_module
 from dataset_tools.annotate import server as server_module
 
@@ -26,6 +26,7 @@ def app(tmp_path):
         annotations_dir=tmp_path / "annotations",
         images_dir=tmp_path / "images",
         previews_dir=tmp_path / "previews",
+        proposals_dir=tmp_path / "proposals",
     )
     storage.images_dir.mkdir()
     for image_id in ("first", "second"):
@@ -164,7 +165,7 @@ def test_failed_save_reports_an_error(app, monkeypatch):
 
 
 def test_empty_manifest_gives_an_empty_list(tmp_path):
-    storage = server_module.Storage(manifest_path=tmp_path / "none.jsonl", annotations_dir=tmp_path, images_dir=tmp_path, previews_dir=tmp_path)
+    storage = server_module.Storage(manifest_path=tmp_path / "none.jsonl", annotations_dir=tmp_path, images_dir=tmp_path, previews_dir=tmp_path, proposals_dir=tmp_path)
     server = server_module.create_server(SAX, storage, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -213,3 +214,38 @@ def test_annotation_with_a_hidden_point_is_saved_and_reopened(app):
     body["points"][0] = {"name": "bell_centre", "visible": False}
     assert requests.put(url, json=body).status_code == 200
     assert requests.get(url).json()["annotation"]["points"][0] == {"name": "bell_centre", "visible": False}
+
+
+def proposal_points():
+    return [{"name": name, "x": 0.25, "y": 0.75, "visible": True} for name in SAX.point_names]
+
+
+def test_state_says_which_images_have_a_usable_proposal(app):
+    proposals.save("first", proposal_points(), app.storage.proposals_dir)
+    images = requests.get(app.base_url + "/api/state").json()["images"]
+    assert [image["has_proposal"] for image in images] == [True, False]
+
+
+def test_proposal_with_other_points_counts_as_none(app):
+    proposals.save("first", [{"name": "other", "x": 0.1, "y": 0.1, "visible": True}], app.storage.proposals_dir)
+    assert requests.get(app.base_url + "/api/state").json()["images"][0]["has_proposal"] is False
+    assert requests.get(app.base_url + "/api/images/first/proposal").json() == {"proposal": None}
+
+
+def test_proposal_is_served_but_never_counts_as_an_annotation(app):
+    proposals.save("first", proposal_points(), app.storage.proposals_dir)
+    assert requests.get(app.base_url + "/api/images/first/proposal").json() == {"proposal": proposal_points()}
+    assert requests.get(app.base_url + "/api/images/first/annotation").json() == {"annotation": None}
+    assert requests.get(app.base_url + "/api/state").json()["images"][0]["status"] == "pending"
+
+
+def test_proposal_cannot_be_written_or_read_for_an_unknown_image(app):
+    assert requests.put(app.base_url + "/api/images/first/proposal", json={}).status_code == 404
+    assert requests.get(app.base_url + "/api/images/unknown/proposal").status_code == 404
+
+
+def test_restored_image_keeps_its_proposal(app):
+    proposals.save("first", proposal_points(), app.storage.proposals_dir)
+    url = app.base_url + "/api/images/first/annotation"
+    requests.put(url, json={"status": "rejected"})
+    assert requests.get(app.base_url + "/api/state").json()["images"][0]["has_proposal"] is True
