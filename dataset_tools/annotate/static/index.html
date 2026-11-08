@@ -37,6 +37,7 @@
   #frame { position: relative; display: inline-block; line-height: 0; }
   #photo { display: block; max-width: calc(100vw - 264px); max-height: calc(100vh - 130px); cursor: crosshair; user-select: none; }
   .marker { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid #fff; border-radius: 50%; background: var(--marker); color: #fff; font-size: 12px; line-height: 18px; text-align: center; pointer-events: none; box-shadow: 0 0 2px #000; }
+  .points-off .marker { visibility: hidden; }
   .marker.movable { pointer-events: auto; cursor: grab; touch-action: none; }
   .marker.selected { outline: 3px solid var(--accent); outline-offset: 1px; }
   #points { margin: 0; padding: 8px 12px; list-style: none; border-bottom: 1px solid var(--line); }
@@ -85,6 +86,7 @@ const SYMBOLS = { pending: "[ ]", annotated: "[x]", skipped: "[~]", rejected: "[
 const CONFIRM_DELAY_MS = 300;
 // Below this, a press on a point is a selection and not a move.
 const DRAG_THRESHOLD_PX = 3;
+const ARROW_STEPS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 const elements = {
   progress: document.getElementById("progress"),
@@ -391,6 +393,8 @@ async function openImage(id) {
   state.selectedPoint = null;
   state.shownAt = null;
   state.loadingPoints = annotated || usesProposal;
+  // Every image opens with its points showing, so none is confirmed without being seen.
+  elements.frame.classList.remove("points-off");
   elements.retry.hidden = true;
   setMessage("");
   markCurrentRow();
@@ -533,6 +537,38 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   event.preventDefault();
   if (!event.repeat) confirmReview();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() !== "s" || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+  elements.frame.classList.toggle("points-off");
+});
+
+function nudgeSelectedPoint([stepX, stepY], repeat) {
+  const point = state.reviewPoints[state.selectedPoint];
+  if (!point?.visible) return;
+  // A held key is one change, so Annulla does not have to step back through every repeat.
+  if (!repeat) rememberReview();
+  const box = elements.photo.getBoundingClientRect();
+  point.x = clamped(point.x + stepX / box.width);
+  point.y = clamped(point.y + stepY / box.height);
+  afterReviewChange();
+}
+
+document.addEventListener("keydown", (event) => {
+  if (!state.reviewPoints || state.saving || !elements.photo.complete) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const number = Number(event.key);
+  if (ARROW_STEPS[event.key]) {
+    event.preventDefault();
+    if (state.selectedPoint !== null) nudgeSelectedPoint(ARROW_STEPS[event.key], event.repeat);
+  } else if (event.repeat) {
+    return;
+  } else if (event.key === "Backspace" || event.key === "Delete") {
+    if (state.reviewPoints[state.selectedPoint]?.visible) hideSelectedPoint();
+  } else if (number >= 1 && number <= state.reviewPoints.length) {
+    selectPoint(number - 1);
+  }
 });
 
 elements.photo.addEventListener("load", noteIfShown);

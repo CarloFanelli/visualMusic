@@ -805,3 +805,82 @@ def test_reopened_image_rejected_in_another_tab_does_not_ask_to_move_points(page
     other.wait_for_function("document.getElementById('prompt').textContent.startsWith('Punto 1')")
     assert "sposta i punti" not in other.inner_text("#message")
 
+
+
+def test_number_keys_select_and_arrows_move_the_selected_point(app, new_page):
+    propose_for(app, app.ids[0])
+    page = open_proposal_page(app, new_page)
+    width = page.locator("#photo").bounding_box()["width"]
+    page.keyboard.press("2")
+    assert page.locator("#points button").nth(1).get_attribute("aria-pressed") == "true"
+    for _ in range(10):
+        page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowDown")
+    assert page.locator("#points button").nth(1).get_attribute("aria-pressed") == "true"
+    points = confirm_and_read(page, app, app.ids[0])
+    assert points[1]["x"] == pytest.approx(0.4 + 10 / width)
+    assert points[1]["y"] > 0.5
+    assert points[0]["x"] == pytest.approx(0.2)
+
+
+def test_arrows_without_a_selected_point_change_nothing_and_stop_at_the_edge(app, new_page):
+    edge = [{"name": name, "x": 1.0, "y": 0.5, "visible": True} for name in instrument.load().point_names]
+    proposals.save(app.ids[0], edge, app.storage.proposals_dir)
+    page = open_proposal_page(app, new_page)
+    page.keyboard.press("ArrowLeft")
+    page.keyboard.press("1")
+    page.keyboard.press("ArrowRight")
+    points = confirm_and_read(page, app, app.ids[0])
+    assert points[0]["x"] == 1.0
+    assert points[1]["x"] == 1.0
+
+
+def test_backspace_hides_the_selected_point_and_annulla_brings_it_back(app, new_page):
+    propose_for(app, app.ids[0])
+    page = open_proposal_page(app, new_page)
+    page.keyboard.press("Backspace")
+    assert page.locator(".marker").count() == 4
+    page.keyboard.press("3")
+    page.keyboard.press("Backspace")
+    assert page.locator(".marker").count() == 3
+    page.click("#undo")
+    assert page.locator(".marker").count() == 4
+    page.keyboard.press("3")
+    page.keyboard.press("Backspace")
+    points = confirm_and_read(page, app, app.ids[0])
+    assert points[2] == {"name": "bell_edge_right", "visible": False}
+
+
+def test_keys_do_nothing_on_an_image_marked_by_hand(page, app):
+    target = current(page)
+    click_photo(page, 0.5, 0.5)
+    for key in ("1", "ArrowRight", "Backspace"):
+        page.keyboard.press(key)
+    assert current(page) == target
+    assert page.locator(".marker").count() == 1
+    assert page.inner_text("#prompt").startswith("Punto 2")
+
+
+def test_s_hides_and_shows_the_points_without_changing_them(app, new_page):
+    propose_for(app, app.ids[0], app.ids[1])
+    page = open_proposal_page(app, new_page)
+    page.keyboard.press("s")
+    assert not page.locator(".marker").first.is_visible()
+    assert page.locator(".marker").count() == 4
+    page.keyboard.press("s")
+    assert page.locator(".marker").first.is_visible()
+    page.keyboard.press("S")
+    points = confirm_and_read(page, app, app.ids[0])
+    assert [point["x"] for point in points] == pytest.approx([0.2, 0.4, 0.6, 0.8])
+    assert all(point["visible"] for point in points)
+
+
+def test_next_image_opens_with_its_points_showing(app, new_page):
+    propose_for(app, app.ids[0], app.ids[1])
+    page = open_proposal_page(app, new_page)
+    page.keyboard.press("s")
+    after_confirm_delay(page)
+    page.keyboard.press("Enter")
+    wait_until_left(page, app.ids[0])
+    page.wait_for_function(PROPOSED)
+    assert page.locator(".marker").first.is_visible()

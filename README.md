@@ -62,7 +62,7 @@ Starts a page reachable only from this computer. Images with a proposal come fir
 .venv/bin/python -m dataset_tools.annotate.server
 ```
 
-To correct a point, drag it, or select it in the list on the left and click where it belongs: the list also reaches points that overlap. Select a point and use **Punto non visibile** to hide it, and place it again to bring it back. **Annulla** reverts the last change. An annotated image reopened from the list works the same way, and stays unchanged until you confirm.
+To correct a point, drag it, or select it in the list on the left and click where it belongs: the list also reaches points that overlap. Select a point and use **Punto non visibile** to hide it, and place it again to bring it back. **Annulla** reverts the last change. From the keyboard, keys 1 to 4 select a point, the arrows move it by one screen pixel, and Backspace hides it. **S** hides or shows all the points on screen, to see the photo underneath, without changing them. An annotated image reopened from the list works the same way, and stays unchanged until you confirm.
 
 While clicking by hand, **Annulla** removes the last point and **Punto non visibile** marks a hidden point. On any image, **Salta** postpones it and **Non adatta** discards it, for example a soprano, several saxophones or no saxophone. A discarded image can be restored by opening it from the list.
 
