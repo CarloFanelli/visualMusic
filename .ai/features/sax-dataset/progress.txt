@@ -1,0 +1,10 @@
+# Task Progress - sax-dataset
+
+01-training-environment: DONE
+02-image-collection: DONE
+03-video-frames: DONE
+04-image-restore: DONE
+05-annotation-flow: DONE
+06-annotation-controls: DONE
+07-dataset-export: DONE
+08-trial-training: DONE

@@ -1,0 +1,19 @@
+# Python environment
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Image and video files stay local; the manifest and annotations are versioned
+data/images/
+data/videos/
+data/previews/
+data/cache/
+data/export/
+data/annotations/*.part
+
+# Training output and model weights
+runs/
+*.pt
+
+.DS_Store
+.ai/memory.local/

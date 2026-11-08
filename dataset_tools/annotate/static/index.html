@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Annotazione punti</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66;
+    --line: #dcdcd6; --accent: #0b6bcb; --error: #b3261e; --marker: #ff3b30;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #20201e; --text: #ecece8; --muted: #a0a09a;
+      --line: #3a3a36; --accent: #6db3f2; --error: #f2877f; --marker: #ff6b61;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  aside { width: 240px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
+  #progress { padding: 12px; font-weight: 600; border-bottom: 1px solid var(--line); }
+  #list { flex: 1; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+  #list button { display: block; width: 100%; padding: 6px 12px; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #list button:hover { background: var(--line); }
+  #list button[aria-current="true"] { background: var(--accent); color: #fff; }
+  main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px; min-height: 58px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #prompt { font-size: 18px; font-weight: 600; }
+  #message { color: var(--muted); }
+  #message.error { color: var(--error); font-weight: 600; }
+  #retry, #controls button { padding: 6px 12px; font: inherit; cursor: pointer; }
+  #controls { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  #progress small { display: block; font-weight: 400; color: var(--muted); }
+  #stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; overflow: hidden; }
+  #frame { position: relative; display: inline-block; line-height: 0; }
+  #photo { display: block; max-width: calc(100vw - 264px); max-height: calc(100vh - 130px); cursor: crosshair; user-select: none; }
+  .marker { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid #fff; border-radius: 50%; background: var(--marker); color: #fff; font-size: 12px; line-height: 18px; text-align: center; pointer-events: none; box-shadow: 0 0 2px #000; }
+  .marker.saved { opacity: .65; }
+  [hidden] { display: none !important; }
+  @media (max-width: 700px) {
+    body { flex-direction: column; }
+    aside { width: 100%; height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); }
+    #photo { max-width: calc(100vw - 24px); max-height: calc(70vh - 180px); }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <div id="progress"></div>
+  <ul id="list"></ul>
+</aside>
+<main>
+  <header>
+    <div id="prompt" aria-live="polite"></div>
+    <div id="message" aria-live="polite"></div>
+    <button id="retry" type="button" hidden>Riprova a salvare</button>
+    <div id="controls">
+      <button id="undo" type="button">Annulla</button>
+      <button id="hide-point" type="button">Punto non visibile</button>
+      <button id="skip" type="button">Salta</button>
+      <button id="reject" type="button">Non adatta</button>
+      <button id="restore" type="button" hidden>Ripristina</button>
+      <button id="resume-skipped" type="button" hidden>Riprendi le saltate</button>
+    </div>
+  </header>
+  <div id="stage">
+    <div id="frame" hidden>
+      <img id="photo" alt="Immagine da annotare" draggable="false">
+    </div>
+  </div>
+</main>
+<script>
+"use strict";
+
+const SYMBOLS = { pending: "[ ]", annotated: "[x]", skipped: "[~]", rejected: "[-]", unreadable: "[!]" };
+
+const elements = {
+  progress: document.getElementById("progress"),
+  list: document.getElementById("list"),
+  prompt: document.getElementById("prompt"),
+  message: document.getElementById("message"),
+  retry: document.getElementById("retry"),
+  undo: document.getElementById("undo"),
+  hidePoint: document.getElementById("hide-point"),
+  skip: document.getElementById("skip"),
+  reject: document.getElementById("reject"),
+  restore: document.getElementById("restore"),
+  resumeSkipped: document.getElementById("resume-skipped"),
+  frame: document.getElementById("frame"),
+  photo: document.getElementById("photo"),
+};
+
+const state = {
+  points: [],
+  images: [],
+  currentId: null,
+  placed: [],
+  savedPoints: null,
+  saving: false,
+  retryAction: null,
+};
+
+function countOf(status) {
+  return state.images.filter((image) => image.status === status).length;
+}
+
+function imageById(id) {
+  return state.images.find((image) => image.image_id === id);
+}
+
+function imageUrl(id) {
+  return `/images/${encodeURIComponent(id)}`;
+}
+
+function annotationUrl(id) {
+  return `/api/images/${encodeURIComponent(id)}/annotation`;
+}
+
+function nextPending() {
+  return state.images.find((image) => image.status === "pending" && image.image_id !== state.currentId);
+}
+
+function setMessage(text, isError = false) {
+  elements.message.textContent = text;
+  elements.message.classList.toggle("error", isError);
+}
+
+function renderProgress() {
+  const annotated = countOf("annotated");
+  const rejected = countOf("rejected");
+  const detail = document.createElement("small");
+  detail.textContent = `${annotated} annotate, ${rejected} scartate, ${countOf("skipped")} saltate`;
+  elements.progress.textContent = `Immagini: ${annotated + rejected} di ${state.images.length} completate`;
+  elements.progress.append(detail);
+}
+
+function renderControls() {
+  const current = imageById(state.currentId);
+  const rejected = current?.status === "rejected";
+  for (const button of [elements.undo, elements.hidePoint, elements.skip, elements.reject]) {
+    button.hidden = !current || rejected;
+    button.disabled = state.saving;
+  }
+  elements.restore.hidden = !rejected;
+  elements.restore.disabled = state.saving;
+  elements.resumeSkipped.hidden = Boolean(current) || countOf("skipped") === 0;
+}
+
+function renderList() {
+  elements.list.replaceChildren(...state.images.map((image) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.id = image.image_id;
+    button.textContent = `${SYMBOLS[image.status] || ""} ${image.image_id}`;
+    button.setAttribute("aria-current", String(image.image_id === state.currentId));
+    button.addEventListener("click", () => {
+      if (!state.saving) openImage(image.image_id);
+    });
+    item.append(button);
+    return item;
+  }));
+}
+
+function updateRow(id) {
+  const button = elements.list.querySelector(`button[data-id="${CSS.escape(id)}"]`);
+  if (button) button.textContent = `${SYMBOLS[imageById(id).status] || ""} ${id}`;
+}
+
+function markCurrentRow() {
+  for (const button of elements.list.querySelectorAll('button[aria-current="true"]')) {
+    button.setAttribute("aria-current", "false");
+  }
+  const button = elements.list.querySelector(`button[data-id="${CSS.escape(state.currentId)}"]`);
+  if (button) {
+    button.setAttribute("aria-current", "true");
+    button.scrollIntoView({ block: "nearest" });
+  }
+}
+
+function renderMarkers() {
+  for (const marker of elements.frame.querySelectorAll(".marker")) marker.remove();
+  const showingSaved = state.placed.length === 0 && state.savedPoints;
+  const points = showingSaved ? state.savedPoints : state.placed;
+  points.forEach((point, index) => {
+    if (!point.visible) return;
+    const marker = document.createElement("div");
+    marker.className = showingSaved ? "marker saved" : "marker";
+    marker.style.left = `${point.x * 100}%`;
+    marker.style.top = `${point.y * 100}%`;
+    marker.textContent = String(index + 1);
+    elements.frame.append(marker);
+  });
+}
+
+function renderPrompt() {
+  const total = state.points.length;
+  const number = state.placed.length;
+  if (imageById(state.currentId)?.status === "rejected") {
+    elements.prompt.textContent = "Immagine scartata";
+  } else if (number < total) {
+    elements.prompt.textContent = `Punto ${number + 1} di ${total}: ${state.points[number].label}`;
+  } else {
+    elements.prompt.textContent = "Salvataggio...";
+  }
+}
+
+function showNoCurrentImage(text, hint) {
+  state.currentId = null;
+  elements.frame.hidden = true;
+  elements.prompt.textContent = text;
+  setMessage(hint);
+  renderControls();
+}
+
+function showFinished() {
+  showNoCurrentImage(
+    "Nessun'altra immagine da annotare.",
+    `Saltate rimaste: ${countOf("skipped")}. Illeggibili: ${countOf("unreadable")}.`,
+  );
+}
+
+function preloadNext() {
+  const next = nextPending();
+  if (next) new Image().src = imageUrl(next.image_id);
+}
+
+async function openImage(id) {
+  state.currentId = id;
+  state.placed = [];
+  state.savedPoints = null;
+  elements.retry.hidden = true;
+  setMessage("");
+  markCurrentRow();
+  renderPrompt();
+  renderMarkers();
+  renderControls();
+  elements.frame.hidden = false;
+  elements.photo.src = imageUrl(id);
+  preloadNext();
+
+  if (imageById(id).status === "annotated") {
+    setMessage("Immagine già salvata: clicca per rifare i punti.");
+    const response = await fetch(annotationUrl(id));
+    if (response.ok && state.currentId === id) {
+      const { annotation } = await response.json();
+      if (annotation) {
+        state.savedPoints = annotation.points;
+        renderMarkers();
+      }
+    }
+  }
+}
+
+function openNext() {
+  const next = nextPending();
+  if (next) {
+    openImage(next.image_id);
+  } else {
+    showFinished();
+  }
+}
+
+async function store(body, afterSaved) {
+  const id = state.currentId;
+  state.saving = true;
+  state.retryAction = () => store(body, afterSaved);
+  elements.retry.hidden = true;
+  setMessage("");
+  renderControls();
+  try {
+    const response = await fetch(annotationUrl(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`errore ${response.status}`);
+  } catch (error) {
+    elements.prompt.textContent = "Non salvato";
+    setMessage(`Salvataggio non riuscito (${error.message}). L'immagine resta aperta.`, true);
+    elements.retry.hidden = false;
+    return;
+  } finally {
+    state.saving = false;
+    renderControls();
+  }
+  imageById(id).status = body.status;
+  updateRow(id);
+  renderProgress();
+  afterSaved(id);
+}
+
+function afterPointChange() {
+  renderMarkers();
+  renderPrompt();
+  if (state.placed.length < state.points.length) return;
+  if (state.placed.some((point) => point.visible)) {
+    store({ status: "annotated", points: state.placed }, openNext);
+  } else {
+    elements.prompt.textContent = "Nessun punto visibile";
+    setMessage("Usa Non adatta per scartare l'immagine, oppure Annulla.", true);
+  }
+}
+
+function canPlacePoint() {
+  // Until the next image loads, the browser keeps showing the previous one.
+  return !state.saving
+    && elements.photo.complete
+    && state.placed.length < state.points.length
+    && imageById(state.currentId)?.status !== "rejected";
+}
+
+elements.photo.addEventListener("click", (event) => {
+  if (!canPlacePoint()) return;
+  const box = elements.photo.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width;
+  const y = (event.clientY - box.top) / box.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  state.placed.push({ name: state.points[state.placed.length].name, x, y, visible: true });
+  afterPointChange();
+});
+
+elements.hidePoint.addEventListener("click", () => {
+  if (!canPlacePoint()) return;
+  state.placed.push({ name: state.points[state.placed.length].name, visible: false });
+  afterPointChange();
+});
+
+elements.undo.addEventListener("click", () => {
+  if (state.saving || state.placed.length === 0) return;
+  state.placed.pop();
+  elements.retry.hidden = true;
+  setMessage("");
+  renderMarkers();
+  renderPrompt();
+});
+
+elements.skip.addEventListener("click", () => store({ status: "skipped" }, openNext));
+elements.reject.addEventListener("click", () => store({ status: "rejected" }, openNext));
+elements.restore.addEventListener("click", () => store({ status: "pending" }, openImage));
+
+elements.resumeSkipped.addEventListener("click", () => {
+  const skipped = state.images.find((image) => image.status === "skipped");
+  if (skipped) openImage(skipped.image_id);
+});
+
+elements.photo.addEventListener("error", () => {
+  const image = imageById(state.currentId);
+  if (!image) return;
+  image.status = "unreadable";
+  updateRow(image.image_id);
+  openNext();
+});
+
+elements.retry.addEventListener("click", () => state.retryAction());
+
+async function start() {
+  const response = await fetch("/api/state");
+  const data = await response.json();
+  state.points = data.points;
+  state.images = data.images;
+  renderList();
+  renderProgress();
+  if (state.images.length === 0) {
+    showNoCurrentImage(
+      "Nessuna immagine da annotare.",
+      "Raccogli le immagini con: .venv/bin/python -m dataset_tools.collect",
+    );
+    return;
+  }
+  openNext();
+}
+
+start().catch((error) => {
+  showNoCurrentImage("Impossibile caricare le immagini.", error.message);
+  setMessage(`Impossibile caricare le immagini: ${error.message}`, true);
+});
+</script>
+</body>
+</html>
