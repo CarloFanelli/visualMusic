@@ -70,7 +70,7 @@ Point names and their order are in `instruments/saxophone.json`. If you change t
 
 ## Export the dataset
 
-Builds the YOLO dataset in `data/export/` from annotated images and shows how far you are from the targets of 300 annotated images and 50 frames from your videos. It can run at any time.
+Builds the YOLO dataset in `~/visualMusic-output/export/` from annotated images and shows how far you are from the targets of 300 annotated images and 50 frames from your videos. It can run at any time. The dataset and the training results stay outside the project because a cloud-synced folder, such as an iCloud Desktop, can leave duplicate files behind when a folder is rebuilt.
 
 ```shell
 .venv/bin/python -m dataset_tools.export
@@ -78,7 +78,7 @@ Builds the YOLO dataset in `data/export/` from annotated images and shows how fa
 
 ## Run the trial training
 
-Trains briefly on the exported dataset, then draws the predicted points on the validation images in `runs/trial/predictions/`. Look at those images: a wrong result on the Apple GPU would not raise an error. This trial proves the pipeline works, not that the model is good. The first run downloads the base model, so it needs network access.
+Trains briefly on the exported dataset, then draws the predicted points on the validation images in `~/visualMusic-output/runs/trial/predictions/`. Look at those images: a wrong result on the Apple GPU would not raise an error. This trial proves the pipeline works, not that the model is good. The first run downloads the base model, so it needs network access.
 
 ```shell
 .venv/bin/python -m dataset_tools.trial
@@ -86,7 +86,7 @@ Trains briefly on the exported dataset, then draws the predicted points on the v
 
 ## Train the model
 
-Trains for 100 passes on the exported dataset, always starting from the base model, and saves the result as `runs/latest.pt`. This takes about 30 minutes with 225 images on an M1 Pro, and longer with more. If training fails or you stop it, the previous `runs/latest.pt` stays in use.
+Trains for 100 passes on the exported dataset, always starting from the base model, and saves the result as `~/visualMusic-output/runs/latest.pt`. This takes about 30 minutes with 225 images on an M1 Pro, and longer with more. If training fails or you stop it, the previous model stays in use.
 
 ```shell
 .venv/bin/python -m dataset_tools.train
@@ -94,7 +94,7 @@ Trains for 100 passes on the exported dataset, always starting from the base mod
 
 ## Compute the proposals
 
-Uses `runs/latest.pt` to suggest the points on every image still to be marked, including skipped ones, and shows how many got a suggestion. Run it again after a new training or collection: annotations never change, and an interrupted run keeps what it already computed.
+Uses `~/visualMusic-output/runs/latest.pt` to suggest the points on every image still to be marked, including skipped ones, and shows how many got a suggestion. Run it again after a new training or collection: annotations never change, and an interrupted run keeps what it already computed.
 
 ```shell
 .venv/bin/python -m dataset_tools.propose

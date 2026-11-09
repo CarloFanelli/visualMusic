@@ -14,7 +14,10 @@ IMAGES = DATA / "images"
 VIDEOS = DATA / "videos"
 PREVIEWS = DATA / "previews"
 CACHE = DATA / "cache"
-EXPORT = DATA / "export"
 PROPOSALS = DATA / "proposals"
-RUNS = ROOT / "runs"
+
+# Generated and rebuilt often, so kept away from folders that a cloud service syncs.
+OUTPUT = Path.home() / "visualMusic-output"
+EXPORT = OUTPUT / "export"
+RUNS = OUTPUT / "runs"
 LATEST_MODEL = RUNS / "latest.pt"

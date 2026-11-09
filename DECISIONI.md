@@ -31,3 +31,4 @@ Questo file registra solo ciò che è stato deciso o richiesto dall'utente.
 | 2026-11-08 | Le immagini si controllano una alla volta e si salvano solo con Conferma o Invio, non con una griglia di conferma multipla. |
 | 2026-11-08 | Le immagini in cui il modello non trova il sax arrivano in fondo e si segnano a mano. |
 | 2026-11-08 | Sulla pagina i tasti 1-4 selezionano un punto, le frecce lo spostano, il tasto cancella lo elimina e il tasto S nasconde o mostra tutti i punti. |
+| 2026-11-09 | Il dataset esportato e i risultati degli addestramenti stanno fuori da iCloud, per evitare file doppi. |
