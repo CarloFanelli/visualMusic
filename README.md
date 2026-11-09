@@ -102,6 +102,18 @@ Uses `~/visualMusic-output/runs/latest.pt` to suggest the points on every image 
 
 Proposals stay in `data/proposals/`, are not versioned, and never reach the exported dataset.
 
+## Track the saxophone live
+
+Starts a page reachable only from this computer, using the latest trained model. Stop it with Ctrl+C.
+
+```shell
+.venv/bin/python -m live_tracking.server
+```
+
+Choose a camera or a video file. The page draws the points the model is confident about, and highlights in yellow the point where sound leaves the bell: its centre or, when that is hidden, the midpoint of the two edges. Nothing is saved.
+
+To judge the model, film a video it has never seen and open it here. Keep that video out of `data/videos/`, because everything in that folder ends up in training.
+
 ## Data in git
 
 The manifest and annotations are versioned. Image and video files are not.

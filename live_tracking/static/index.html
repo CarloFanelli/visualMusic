@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracciamento dal vivo</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66;
+    --line: #dcdcd6; --accent: #0b6bcb; --error: #b3261e; --marker: #ff3b30;
+    --ratio: 1.5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --panel: #20201e; --text: #ecece8; --muted: #a0a09a;
+      --line: #3a3a36; --accent: #6db3f2; --error: #f2877f; --marker: #ff6b61;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  [hidden] { display: none !important; }
+  #message { padding: 12px; color: var(--error); font-weight: 600; }
+  #message:empty { display: none; }
+  #sources { margin: auto; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; text-align: center; }
+  #sources h1 { margin: 0 0 16px; font-size: 20px; }
+  #sources label { display: block; margin-bottom: 12px; }
+  #camera-note { margin: 12px 0 0; color: var(--muted); }
+  #camera-note:empty { display: none; }
+  button { padding: 10px 18px; margin: 4px; font: inherit; cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  select { font: inherit; max-width: 240px; }
+  #tracking { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #bar { height: 58px; flex: none; display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #stage { container-type: size; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; overflow: hidden; }
+  /* Sized from the image proportions, so the markers in percentages always land on the image. */
+  #frame { position: relative; flex: none; aspect-ratio: var(--ratio); width: min(100cqw, 100cqh * var(--ratio)); background: #000; }
+  #view { display: block; width: 100%; height: 100%; }
+  #view.mirrored { transform: scaleX(-1); }
+  .marker { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid #fff; border-radius: 50%; background: var(--marker); pointer-events: none; box-shadow: 0 0 2px #000; }
+  #sound-point { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border: 4px solid #ffd60a; border-radius: 50%; pointer-events: none; box-shadow: 0 0 6px #000; }
+  #not-found { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: 6px; background: rgb(0 0 0 / 70%); color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="message" role="alert"></div>
+<section id="sources">
+  <h1>Scegli la sorgente</h1>
+  <label>Webcam da usare <select id="camera-list"></select></label>
+  <button id="camera" type="button" disabled>Webcam</button>
+  <button id="video" type="button">Video registrato</button>
+  <input id="file" type="file" accept="video/*" hidden>
+  <p id="camera-note"></p>
+</section>
+<section id="tracking" hidden>
+  <div id="bar">
+    <div id="video-controls" hidden>
+      <button id="pause" type="button">Pausa</button>
+      <button id="restart" type="button">Ricomincia</button>
+    </div>
+    <button id="stop" type="button">Ferma</button>
+  </div>
+  <div id="stage">
+    <div id="frame"><video id="view" muted playsinline></video><div id="markers"></div><div id="sound-point" hidden></div><div id="not-found" hidden>sax non trovato</div></div>
+  </div>
+</section>
+<script>
+  const HEALTH_INTERVAL_MS = 2000;
+  const SAMPLE_LONG_SIDE = 640;
+  const SAMPLE_QUALITY = 0.8;
+  const MAX_FRAME_TIMES = 300;
+  const LOCK_NAME = "live-tracking";
+  const CONNECTION_LOST = "Connessione persa. Riavvia il programma con .venv/bin/python -m live_tracking.server e ricarica la pagina.";
+  const OPEN_ELSEWHERE = "Il tracciamento è già aperto in un'altra scheda o in un altro browser: chiudilo e riprova.";
+  const CAMERA_STOPPED = "La webcam si è fermata: forse è stata scollegata o la sta usando un'altra app.";
+  const CAMERA_BUSY = "Non riesco a usare la webcam: forse la sta usando un'altra app. Puoi comunque scegliere un video.";
+  const CAMERA_REFUSED = "Serve il permesso per la webcam: concedilo dall'icona accanto all'indirizzo del browser e, se non basta, in Impostazioni di Sistema, Privacy e sicurezza, Videocamera. Puoi comunque scegliere un video.";
+  const VIDEO_UNREADABLE = "Scusa, non riesco a leggere questo file come video: prova con un altro.";
+  const VIDEO_DAMAGED = "Il video sembra danneggiato da questo punto in poi: puoi ricominciarlo o fermarti.";
+  const FRAME_FAILED = "Il programma non è riuscito ad analizzare un'immagine: riprova.";
+
+  const message = document.getElementById("message");
+  const sources = document.getElementById("sources");
+  const tracking = document.getElementById("tracking");
+  const view = document.getElementById("view");
+  const markers = document.getElementById("markers");
+  const soundPoint = document.getElementById("sound-point");
+  const notFound = document.getElementById("not-found");
+  const cameraList = document.getElementById("camera-list");
+  const cameraButton = document.getElementById("camera");
+  const cameraNote = document.getElementById("camera-note");
+  const fileInput = document.getElementById("file");
+  const videoControls = document.getElementById("video-controls");
+  const pauseButton = document.getElementById("pause");
+  const sample = document.createElement("canvas");
+
+  let current = null;
+  let starting = false;
+  // Milliseconds from capturing an image to drawing its points, read when checking the speed targets.
+  window.frameTimes = [];
+
+  function place(element, point) {
+    element.style.left = `${(current.mirrored ? 1 - point.x : point.x) * 100}%`;
+    element.style.top = `${point.y * 100}%`;
+  }
+
+  function draw({ points, sound_point: sound, found }) {
+    markers.replaceChildren(...points.map(point => {
+      const marker = document.createElement("div");
+      marker.className = "marker";
+      place(marker, point);
+      return marker;
+    }));
+    soundPoint.hidden = !sound;
+    if (sound) place(soundPoint, sound);
+    notFound.hidden = found;
+  }
+
+  async function refreshCameras() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter(device => device.kind === "videoinput");
+    const chosen = cameraList.value;
+    cameraList.replaceChildren(...cameras.map((camera, index) => new Option(camera.label || `Webcam ${index + 1}`, camera.deviceId)));
+    if (cameras.some(camera => camera.deviceId === chosen)) cameraList.value = chosen;
+    cameraButton.disabled = cameras.length === 0;
+    cameraNote.textContent = cameras.length === 0 ? "Nessuna webcam trovata su questo computer. Puoi comunque scegliere un video." : "";
+  }
+
+  function finish(run, text = "") {
+    if (run.finished) return;
+    run.finished = true;
+    run.events.abort();
+    if (run.stream) run.stream.getTracks().forEach(track => track.stop());
+    view.srcObject = null;
+    if (run.videoUrl) {
+      view.pause();
+      view.removeAttribute("src");
+      view.load();
+      URL.revokeObjectURL(run.videoUrl);
+    }
+    draw({ points: [], sound_point: null, found: true });
+    tracking.hidden = true;
+    sources.hidden = false;
+    current = null;
+    message.textContent = text;
+    run.releaseLock();
+  }
+
+  async function sendFrame(run) {
+    const session = run.session;
+    const time = run.sourceTime();
+    const capturedAt = performance.now();
+    const scale = SAMPLE_LONG_SIDE / Math.max(view.videoWidth, view.videoHeight);
+    sample.width = Math.round(view.videoWidth * scale);
+    sample.height = Math.round(view.videoHeight * scale);
+    sample.getContext("2d").drawImage(view, 0, 0, sample.width, sample.height);
+    const image = await new Promise(resolve => sample.toBlob(resolve, "image/jpeg", SAMPLE_QUALITY));
+    let response, reply;
+    try {
+      response = await fetch(`/api/frames?session=${session}&time=${time}`, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: image });
+      reply = response.ok ? await response.json() : null;
+    } catch {
+      finish(run, CONNECTION_LOST);
+      return;
+    }
+    if (run.finished) return;
+    if (session !== run.session) {
+      run.sending = false;
+      sendIfReady(run);
+    } else if (response.status === 409) {
+      finish(run, OPEN_ELSEWHERE);
+    } else if (!response.ok) {
+      finish(run, FRAME_FAILED);
+    } else {
+      draw(reply);
+      window.frameTimes.push(performance.now() - capturedAt);
+      if (window.frameTimes.length > MAX_FRAME_TIMES) window.frameTimes.shift();
+      run.sending = false;
+      sendIfReady(run);
+    }
+  }
+
+  function sendIfReady(run) {
+    if (run.finished || run.sending || !run.newImage || !run.session) return;
+    run.newImage = false;
+    run.sending = true;
+    sendFrame(run);
+  }
+
+  // Watches every image, not only the ones after a reply, so an image that arrived meanwhile is sent at once.
+  function watchImages(run) {
+    if (run.finished) return;
+    run.newImage = true;
+    sendIfReady(run);
+    view.requestVideoFrameCallback(() => watchImages(run));
+  }
+
+  async function openCamera(run) {
+    let stream;
+    try {
+      // Before the first permission Chrome hides the identifiers, and then the default camera is the only choice.
+      const camera = cameraList.value ? { deviceId: { exact: cameraList.value } } : {};
+      stream = await navigator.mediaDevices.getUserMedia({ video: { ...camera, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    } catch (error) {
+      finish(run, error.name === "NotAllowedError" ? CAMERA_REFUSED : CAMERA_BUSY);
+      return;
+    }
+    if (run.finished) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    run.stream = stream;
+    stream.getVideoTracks()[0].addEventListener("ended", () => finish(run, CAMERA_STOPPED));
+    view.srcObject = stream;
+    try {
+      await view.play();
+    } catch {
+      finish(run, CAMERA_BUSY);
+      return;
+    }
+    try {
+      await refreshCameras();
+      await startSession(run);
+    } catch {
+      finish(run, CONNECTION_LOST);
+      return;
+    }
+    beginTracking(run);
+  }
+
+  async function startSession(run) {
+    const reply = await fetch("/api/sessions", { method: "POST" });
+    run.session = (await reply.json()).session;
+  }
+
+  function beginTracking(run) {
+    if (run.finished) return;
+    document.documentElement.style.setProperty("--ratio", view.videoWidth / view.videoHeight);
+    watchImages(run);
+  }
+
+  function videoLoaded(run) {
+    return new Promise((resolve, reject) => {
+      view.addEventListener("loadeddata", resolve, { once: true, signal: run.events.signal });
+      view.addEventListener("error", reject, { once: true, signal: run.events.signal });
+    });
+  }
+
+  async function openVideo(run, file) {
+    run.videoUrl = URL.createObjectURL(file);
+    pauseButton.textContent = "Pausa";
+    pauseButton.disabled = false;
+    try {
+      const loaded = videoLoaded(run);
+      view.src = run.videoUrl;
+      await loaded;
+      if (!view.videoWidth) throw new Error("no images in this file");
+      await view.play();
+    } catch {
+      finish(run, VIDEO_UNREADABLE);
+      return;
+    }
+    view.addEventListener("ended", () => { pauseButton.disabled = true; }, { signal: run.events.signal });
+    view.addEventListener("error", () => {
+      run.session = null;
+      pauseButton.disabled = true;
+      message.textContent = VIDEO_DAMAGED;
+    }, { signal: run.events.signal });
+    try {
+      await startSession(run);
+    } catch {
+      finish(run, CONNECTION_LOST);
+      return;
+    }
+    beginTracking(run);
+  }
+
+  function togglePause() {
+    if (view.paused) {
+      view.play();
+      pauseButton.textContent = "Pausa";
+    } else {
+      view.pause();
+      pauseButton.textContent = "Riprendi";
+    }
+  }
+
+  // A new session, because time in the source jumps back and the previous points must not carry over.
+  async function restartVideo(run) {
+    if (run.restarting) return;
+    run.restarting = true;
+    run.session = null;
+    message.textContent = "";
+    draw({ points: [], sound_point: null, found: true });
+    view.pause();
+    try {
+      if (view.error) {
+        const loaded = videoLoaded(run);
+        view.load();
+        await loaded;
+      }
+      await startSession(run);
+      if (run.finished) return;
+      view.currentTime = 0;
+      await view.play();
+    } catch {
+      finish(run, view.error ? VIDEO_UNREADABLE : CONNECTION_LOST);
+      return;
+    }
+    run.restarting = false;
+    pauseButton.textContent = "Pausa";
+    pauseButton.disabled = false;
+    sendIfReady(run);
+  }
+
+  function startSource(open, mirrored, sourceTime, hasVideoControls) {
+    if (current || starting) return;
+    starting = true;
+    message.textContent = "";
+    // The lock is released by the browser too when a tab closes, so it can never stay taken.
+    navigator.locks.request(LOCK_NAME, { ifAvailable: true }, lock => {
+      starting = false;
+      if (!lock) {
+        message.textContent = OPEN_ELSEWHERE;
+        return undefined;
+      }
+      return new Promise(releaseLock => {
+        current = { finished: false, stream: null, session: null, events: new AbortController(), mirrored, sourceTime, releaseLock };
+        view.classList.toggle("mirrored", mirrored);
+        videoControls.hidden = !hasVideoControls;
+        sources.hidden = true;
+        tracking.hidden = false;
+        open(current);
+      });
+    });
+  }
+
+  async function checkHealth() {
+    try {
+      const response = await fetch("/api/health");
+      if (!response.ok) throw new Error();
+      if (message.textContent === CONNECTION_LOST) message.textContent = "";
+    } catch {
+      message.textContent = CONNECTION_LOST;
+    }
+  }
+
+  async function warnIfOpenElsewhere() {
+    const { held } = await navigator.locks.query();
+    if (!current && held.some(lock => lock.name === LOCK_NAME)) message.textContent = OPEN_ELSEWHERE;
+  }
+
+  cameraButton.addEventListener("click", () => startSource(openCamera, true, () => performance.now() / 1000, false));
+  document.getElementById("video").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files[0];
+    fileInput.value = "";
+    if (file) startSource(run => openVideo(run, file), false, () => view.currentTime, true);
+  });
+  pauseButton.addEventListener("click", togglePause);
+  document.getElementById("restart").addEventListener("click", () => { if (current) restartVideo(current); });
+  document.getElementById("stop").addEventListener("click", () => { if (current) finish(current); });
+  refreshCameras();
+  warnIfOpenElsewhere();
+  setInterval(checkHealth, HEALTH_INTERVAL_MS);
+</script>
+</body>
+</html>

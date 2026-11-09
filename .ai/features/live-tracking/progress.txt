@@ -1,0 +1,6 @@
+# Task Progress - live-tracking
+
+01-live-page-start: DONE
+02-camera-tracking: DONE
+03-sound-point-steady: DONE
+04-video-source: DONE

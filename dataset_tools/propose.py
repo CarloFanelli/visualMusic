@@ -50,6 +50,18 @@ def _predict(model, record, images_dir, device):
     return results[0] if results else None
 
 
+def load_model(instrument, model_path, model_factory):
+    if not model_path.exists():
+        raise ProposalError("No trained model found. Run: .venv/bin/python -m dataset_tools.train")
+    model = model_factory(str(model_path))
+    if model.model.kpt_shape[0] != len(instrument.point_names):
+        raise ProposalError(
+            f"The model has {model.model.kpt_shape[0]} points and the instrument {len(instrument.point_names)}. "
+            "Train again with: .venv/bin/python -m dataset_tools.train"
+        )
+    return model
+
+
 def run(
     instrument,
     manifest_path=paths.MANIFEST,
@@ -60,14 +72,7 @@ def run(
     model_factory=YOLO,
     device=None,
 ):
-    if not model_path.exists():
-        raise ProposalError("No trained model found. Run: .venv/bin/python -m dataset_tools.train")
-    model = model_factory(str(model_path))
-    if model.model.kpt_shape[0] != len(instrument.point_names):
-        raise ProposalError(
-            f"The model has {model.model.kpt_shape[0]} points and the instrument {len(instrument.point_names)}. "
-            "Train again with: .venv/bin/python -m dataset_tools.train"
-        )
+    model = load_model(instrument, model_path, model_factory)
     device = device or trial.default_device()
     report = Report()
     for record in manifest.load(manifest_path, repair=False):

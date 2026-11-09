@@ -3,7 +3,7 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -11,8 +11,8 @@ from PIL import Image, ImageOps
 
 from dataset_tools import annotations, manifest, paths, proposals
 from dataset_tools import instrument as instrument_module
+from dataset_tools.local_server import HOST, LocalHandler, serve_until_stopped
 
-HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 PREVIEW_MAX_SIDE = 1600
 MAX_BODY_BYTES = 64 * 1024
@@ -37,33 +37,9 @@ def create_preview(source, destination):
             upright.save(file, "JPEG", quality=85)
 
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(LocalHandler):
     storage: Storage
     instrument: instrument_module.Instrument
-
-    def log_message(self, *args):
-        pass
-
-    def _send(self, status, body=b"", content_type="application/json"):
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _send_json(self, status, value):
-        self._send(status, json.dumps(value, ensure_ascii=False).encode("utf-8"))
-
-    def _allowed_hosts(self):
-        port = self.server.server_address[1]
-        return {f"{HOST}:{port}", f"localhost:{port}"}
-
-    def _request_is_local(self):
-        """Stops other websites open in the browser from reaching this server."""
-        if self.headers.get("Host") not in self._allowed_hosts():
-            return False
-        origin = self.headers.get("Origin")
-        return origin is None or urlsplit(origin).netloc in self._allowed_hosts()
 
     def _records(self):
         return {record["image_id"]: record for record in manifest.load(self.storage.manifest_path, repair=False)}
@@ -174,13 +150,7 @@ def main():
         print(f"Cannot start: {error}")
         return 1
     server = create_server(instrument, port=arguments.port)
-    print(f"Open http://{HOST}:{server.server_address[1]} (press Ctrl+C to stop)")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+    serve_until_stopped(server)
     return 0
 
 
