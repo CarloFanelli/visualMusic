@@ -1,6 +1,9 @@
 """Drives the live tracking page in real Chrome, with Chrome's fake camera and a scripted model."""
+import base64
+import math
 import threading
 import time
+import wave
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
@@ -21,6 +24,11 @@ TWO_FAKE_CAMERAS = "--use-fake-device-for-media-stream=device-count=2"
 NO_CAMERA = "navigator.mediaDevices.enumerateDevices = async () => [];"
 REFUSED = """navigator.mediaDevices.getUserMedia = async () => {
   throw new DOMException("refused", "NotAllowedError");
+};"""
+REFUSED_MICROPHONE = """const realGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+navigator.mediaDevices.getUserMedia = async constraints => {
+  if (constraints.audio) throw new DOMException("refused", "NotAllowedError");
+  return realGetUserMedia(constraints);
 };"""
 
 
@@ -50,6 +58,20 @@ def playwright():
         yield running
 
 
+def write_tone(path, hertz, amplitude=0.5, seconds=2, rate=48000, then_breath=False):
+    """Chrome's fake microphone plays this file in a loop. Without a frequency it plays noise, like breath."""
+    index = np.arange(seconds * rate)
+    sound = np.sin(2 * np.pi * hertz * index / rate) if hertz else np.random.default_rng(1).uniform(-1, 1, index.size)
+    if then_breath:
+        sound = np.concatenate([sound, np.random.default_rng(1).uniform(-1, 1, index.size)])
+    with wave.open(str(path), "wb") as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(rate)
+        file.writeframes((amplitude * 32767 * sound).round().astype("<i2").tobytes())
+    return path
+
+
 def launch(playwright, *arguments):
     try:
         return playwright.chromium.launch(channel="chrome", headless=True, args=list(arguments))
@@ -62,6 +84,24 @@ def browser(playwright):
     chrome = launch(playwright, TWO_FAKE_CAMERAS, "--use-fake-ui-for-media-stream")
     yield chrome
     chrome.close()
+
+
+@pytest.fixture
+def microphone_browser(playwright, tmp_path):
+    """Returns a browser whose fake microphone plays a tone of the given frequency and loudness.
+
+    Chrome's default fake microphone is not silent: it beeps loudly every so often.
+    """
+    browsers = []
+
+    def start(hertz, amplitude=0.5, then_breath=False):
+        tone = write_tone(tmp_path / f"tone-{hertz}-{amplitude}-{then_breath}.wav", hertz, amplitude, then_breath=then_breath)
+        browsers.append(launch(playwright, TWO_FAKE_CAMERAS, "--use-fake-ui-for-media-stream", f"--use-file-for-fake-audio-capture={tone}"))
+        return browsers[-1]
+
+    yield start
+    for running in browsers:
+        running.close()
 
 
 @pytest.fixture
@@ -127,6 +167,141 @@ def test_every_camera_can_be_chosen(browser, server):
     used = page.evaluate("document.getElementById('view').srcObject.getVideoTracks()[0].getSettings().deviceId")
     assert used == second
     context.close()
+
+
+def chart_state(page):
+    return page.evaluate("window.chartState")
+
+
+def wait_for_dot(page):
+    page.wait_for_function("window.chartState.dot !== null")
+    return chart_state(page)["dot"]
+
+
+def height_of(hertz):
+    return math.log2(hertz / 80) / math.log2(1600 / 80)
+
+
+def test_every_microphone_can_be_chosen(browser, server):
+    context = browser.new_context()
+    page = open_page(context, server)
+    start_camera(page)
+    page.get_by_role("button", name="Ferma").click()
+    options = page.locator("#microphone-list option")
+    expect(options).not_to_have_count(0)
+    chosen = options.last.get_attribute("value")
+    page.locator("#microphone-list").select_option(chosen)
+    start_camera(page)
+    page.wait_for_function("current && current.microphone")
+    used = page.evaluate("current.microphone.getAudioTracks()[0].getSettings().deviceId")
+    assert used == chosen
+    context.close()
+
+
+def test_the_microphone_is_heard_without_voice_processing(microphone_browser, server):
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    page.wait_for_function("current && current.microphone")
+    settings = page.evaluate("current.microphone.getAudioTracks()[0].getSettings()")
+    assert not settings["echoCancellation"]
+    assert not settings["noiseSuppression"]
+    assert not settings["autoGainControl"]
+
+
+def test_a_steady_tone_puts_the_dot_at_its_frequency(microphone_browser, server):
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    dot = wait_for_dot(page)
+    assert dot["y"] == pytest.approx(height_of(220), abs=math.log2(1.03) / math.log2(20))
+
+
+def one_after_another(pages, measure):
+    """The program tracks one page at a time, so each page is measured and stopped before the next."""
+    results = []
+    for page in pages:
+        start_camera(page)
+        results.append(measure(page))
+        page.get_by_role("button", name="Ferma").click()
+    return results
+
+
+def test_a_louder_sound_moves_the_dot_right(microphone_browser, server):
+    pages = [open_page(microphone_browser(220, amplitude=amplitude), server) for amplitude in (0.05, 0.8)]
+    quiet, loud = one_after_another(pages, wait_for_dot)
+    assert quiet["x"] < loud["x"] - 0.2
+
+
+def test_a_frequency_above_the_chart_sits_on_its_top_edge(microphone_browser, server):
+    page = open_page(microphone_browser(2000), server)
+    start_camera(page)
+    assert wait_for_dot(page)["y"] == 1
+
+
+def test_silence_shows_no_dot(microphone_browser, server):
+    page = open_page(microphone_browser(0, amplitude=0), server)
+    start_camera(page)
+    page.wait_for_function("current && current.microphone")
+    expect(page.locator("#chart")).to_be_visible()
+    page.wait_for_timeout(300)
+    assert chart_state(page)["dot"] is None
+
+
+def test_the_chart_sits_in_the_bottom_right_corner_at_the_same_size(microphone_browser, server):
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    expect(page.locator("#chart")).to_be_visible()
+    for size in [{"width": 1280, "height": 720}, {"width": 500, "height": 700}]:
+        page.set_viewport_size(size)
+        frame, chart = page.locator("#frame").bounding_box(), page.locator("#chart").bounding_box()
+        assert (chart["width"], chart["height"]) == (160, 120)
+        assert frame["x"] + frame["width"] - (chart["x"] + chart["width"]) == pytest.approx(8, abs=1)
+        assert frame["y"] + frame["height"] - (chart["y"] + chart["height"]) == pytest.approx(8, abs=1)
+
+
+def test_a_refused_microphone_keeps_tracking_and_explains(browser, server):
+    page = open_page(browser, server, REFUSED_MICROPHONE)
+    start_camera(page)
+    expect(page.locator("#message")).to_contain_text("permesso per il microfono")
+    expect(page.locator("#chart")).to_be_hidden()
+    before = page.evaluate("window.frameTimes.length")
+    page.wait_for_function(f"window.frameTimes.length > {before}")
+
+
+def test_no_microphone_disables_the_choice_and_the_camera_still_works(browser, server):
+    cameras_only = """const realEnumerate = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
+    navigator.mediaDevices.enumerateDevices = async () => (await realEnumerate()).filter(device => device.kind !== "audioinput");"""
+    page = open_page(browser, server, cameras_only)
+    expect(page.locator("#microphone-list")).to_be_disabled()
+    expect(page.locator("#microphone-note")).to_contain_text("Nessun microfono")
+    start_camera(page)
+    expect(page.locator("#chart")).to_be_hidden()
+
+
+def test_a_microphone_that_stops_keeps_tracking_and_says_so(browser, server):
+    page = open_page(browser, server)
+    errors = []
+    page.on("pageerror", lambda error: errors.append(error))
+    start_camera(page)
+    page.wait_for_function("current && current.microphone")
+    page.evaluate("""(() => {
+      const track = current.microphone.getAudioTracks()[0];
+      track.stop();
+      track.dispatchEvent(new Event('ended'));
+    })()""")
+    expect(page.locator("#message")).to_contain_text("microfono si è fermato")
+    expect(page.locator("#chart")).to_be_hidden()
+    expect(page.locator("#tracking")).to_be_visible()
+    page.wait_for_timeout(200)
+    assert errors == []
+
+
+def test_stop_turns_the_microphone_off(browser, server):
+    page = open_page(browser, server)
+    start_camera(page)
+    page.wait_for_function("current && current.microphone")
+    page.evaluate("window.heldMicrophone = current.microphone")
+    page.get_by_role("button", name="Ferma").click()
+    assert page.evaluate("window.heldMicrophone.getTracks().every(track => track.readyState === 'ended')")
 
 
 def test_points_are_drawn_mirrored_on_a_mirrored_image(browser, server):
@@ -377,7 +552,44 @@ def write_video(path, width=320, height=240, seconds=3, rate=30):
 def choose_file(page, path):
     with page.expect_file_chooser() as chooser:
         page.get_by_role("button", name="Video registrato").click()
-    chooser.value.set_files(str(path))
+    chooser.value.set_files(path if isinstance(path, dict) else str(path))
+
+
+RECORD_VIDEO = """async hertz => {
+  const canvas = Object.assign(document.createElement('canvas'), { width: 160, height: 120 });
+  const paint = canvas.getContext('2d');
+  const stream = canvas.captureStream(30);
+  const context = new AudioContext();
+  await context.resume();
+  if (hertz) {
+    const tone = context.createOscillator();
+    const output = context.createMediaStreamDestination();
+    tone.frequency.value = hertz;
+    tone.connect(output);
+    tone.start();
+    stream.addTrack(output.stream.getAudioTracks()[0]);
+  }
+  const recorder = new MediaRecorder(stream, { mimeType: hertz ? 'video/webm;codecs=vp8,opus' : 'video/webm;codecs=vp8' });
+  const parts = [];
+  recorder.ondataavailable = event => parts.push(event.data);
+  recorder.start();
+  for (let step = 0; step < 90; step++) {
+    paint.fillStyle = `rgb(${step * 2}, 80, 80)`;
+    paint.fillRect(0, 0, 160, 120);
+    await new Promise(resolve => setTimeout(resolve, 33));
+  }
+  recorder.stop();
+  await new Promise(resolve => { recorder.onstop = resolve; });
+  const bytes = new Uint8Array(await new Blob(parts).arrayBuffer());
+  let text = '';
+  for (const byte of bytes) text += String.fromCharCode(byte);
+  return btoa(text);
+}"""
+
+
+def recorded_video(page, hertz):
+    """A short video recorded by Chrome itself, since no tool here can add sound to a video."""
+    return {"name": "clip.webm", "mimeType": "video/webm", "buffer": base64.b64decode(page.evaluate(RECORD_VIDEO, hertz))}
 
 
 def start_video(page, path):
@@ -411,6 +623,43 @@ def test_the_camera_shows_no_video_controls_and_stays_mirrored_after_a_video(bro
     assert marker_position(page) == pytest.approx([80, 25], abs=0.01)
     expect(page.get_by_role("button", name="Pausa")).to_be_hidden()
     expect(page.get_by_role("button", name="Ricomincia")).to_be_hidden()
+
+
+def test_a_video_with_sound_is_heard_and_drives_the_chart(browser, server):
+    page = open_page(browser, server)
+    clip = recorded_video(page, 330)
+    start_video(page, clip)
+    assert page.evaluate("document.getElementById('view').muted") is False
+    dot = wait_for_dot(page)
+    assert dot["y"] == pytest.approx(height_of(330), abs=math.log2(1.03) / math.log2(20))
+
+
+def test_a_video_chosen_again_still_drives_the_chart(browser, server):
+    page = open_page(browser, server)
+    clip = recorded_video(page, 330)
+    start_video(page, clip)
+    wait_for_dot(page)
+    page.get_by_role("button", name="Ferma").click()
+    start_video(page, clip)
+    wait_for_dot(page)
+    expect(page.locator("#message")).to_be_empty()
+
+
+def test_a_video_without_sound_says_so_and_keeps_tracking(browser, server):
+    page = open_page(browser, server)
+    start_video(page, recorded_video(page, 0))
+    expect(page.locator("#message")).to_contain_text("non ha audio")
+    expect(page.locator("#chart")).to_be_hidden()
+
+
+def test_a_paused_video_shows_no_dot_and_its_trail_fades(browser, server):
+    page = open_page(browser, server)
+    start_video(page, recorded_video(page, 330))
+    wait_for_dot(page)
+    page.get_by_role("button", name="Pausa").click()
+    page.wait_for_function("window.chartState.dot === null")
+    page.wait_for_timeout(2100)
+    assert chart_state(page)["trail"] == []
 
 
 def test_a_vertical_video_keeps_its_proportions_and_aligned_points(browser, server, tmp_path):
@@ -595,3 +844,120 @@ def test_a_second_tab_cannot_start_a_video_while_tracking_runs(browser, server, 
     expect(second.locator("#sources")).to_be_visible()
     expect(second.locator("#message")).to_contain_text("altra scheda")
     context.close()
+
+
+def glow_state(page):
+    return page.evaluate("""(() => {
+      const glow = document.getElementById('glow');
+      return { left: parseFloat(glow.style.left), top: parseFloat(glow.style.top), width: parseFloat(glow.style.width),
+               opacity: parseFloat(glow.style.opacity), shown: parseFloat(getComputedStyle(glow).opacity),
+               colour: glow.style.getPropertyValue('--glow-color') };
+    })()""")
+
+
+def glowing(page):
+    page.wait_for_function("parseFloat(document.getElementById('glow').style.opacity) > 0")
+    return glow_state(page)
+
+
+def hue_of(colour):
+    return float(colour.removeprefix("hsl(").split()[0])
+
+
+def test_the_glow_sits_on_the_mirrored_sound_point(microphone_browser, server):
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    glow = glowing(page)
+    assert (glow["left"], glow["top"]) == pytest.approx((80, 25), abs=0.01)
+
+
+def test_a_louder_sound_gives_a_larger_brighter_glow(microphone_browser, server):
+    pages = [open_page(microphone_browser(220, amplitude=amplitude), server) for amplitude in (0.05, 0.8)]
+    small, large = one_after_another(pages, glowing)
+    assert small["width"] < large["width"]
+    assert small["opacity"] < large["opacity"]
+
+
+def test_the_glow_lights_up_at_once_when_a_note_starts(microphone_browser, server):
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    target, shown = page.wait_for_function("""(() => {
+      const glow = document.getElementById('glow');
+      const target = parseFloat(glow.style.opacity);
+      return target > 0 && [target, parseFloat(getComputedStyle(glow).opacity)];
+    })()""").json_value()
+    assert shown == pytest.approx(target, abs=0.05)
+
+
+def test_silence_gives_no_glow(microphone_browser, server):
+    page = open_page(microphone_browser(0, amplitude=0), server)
+    start_camera(page)
+    page.wait_for_function("current && current.microphone")
+    page.wait_for_timeout(500)
+    assert glow_state(page)["shown"] == 0
+
+
+@pytest.mark.parametrize(("hertz", "hue"), [(80, 20), (1600, 230), (60, 20), (2000, 230)])
+def test_the_colour_goes_from_warm_low_to_cold_high(microphone_browser, server, hertz, hue):
+    page = open_page(microphone_browser(hertz), server)
+    start_camera(page)
+    page.wait_for_function("document.getElementById('glow').style.getPropertyValue('--glow-color').startsWith('hsl')")
+    assert hue_of(glow_state(page)["colour"]) == pytest.approx(hue, abs=5)
+
+
+def test_breath_without_a_frequency_gives_a_white_glow(microphone_browser, server):
+    page = open_page(microphone_browser(0, amplitude=0.3), server)
+    start_camera(page)
+    assert glowing(page)["colour"] == "#fff"
+
+
+def test_breath_after_a_note_keeps_its_colour_briefly_then_turns_white(microphone_browser, server):
+    page = open_page(microphone_browser(220, then_breath=True), server)
+    start_camera(page)
+    page.wait_for_function("document.getElementById('glow').style.getPropertyValue('--glow-color').startsWith('hsl')")
+    page.wait_for_function("document.getElementById('glow').style.getPropertyValue('--glow-color') === '#fff'", timeout=5000)
+
+
+def test_the_glow_fades_out_when_the_sound_point_goes(microphone_browser, server):
+    model = server.RequestHandlerClass.model
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    glowing(page)
+    model.confidences = [0.1, 0.1, 0.1, 0.9]
+    expect(page.locator("#sound-point")).to_be_hidden()
+    page.wait_for_timeout(350)
+    assert glow_state(page)["shown"] == 0
+
+
+def test_the_glow_glides_when_the_sound_point_jumps(browser, server):
+    page = open_page(browser, server)
+    transition = page.locator("#glow").evaluate("element => getComputedStyle(element).transitionProperty")
+    assert "left" in transition and "top" in transition
+
+
+def test_points_can_be_hidden_while_the_glow_stays(microphone_browser, server):
+    page = open_page(microphone_browser(220), server)
+    start_camera(page)
+    page.get_by_role("button", name="Nascondi punti").click()
+    expect(page.locator(".marker").first).to_be_hidden()
+    expect(page.locator("#sound-point")).to_be_hidden()
+    assert glowing(page)["opacity"] > 0
+    page.get_by_role("button", name="Mostra punti").click()
+    expect(page.locator(".marker").first).to_be_visible()
+
+
+def test_points_are_shown_again_at_each_new_start(browser, server):
+    page = open_page(browser, server)
+    start_camera(page)
+    page.get_by_role("button", name="Nascondi punti").click()
+    page.get_by_role("button", name="Ferma").click()
+    start_camera(page)
+    expect(page.locator(".marker").first).to_be_visible()
+    expect(page.get_by_role("button", name="Nascondi punti")).to_be_visible()
+
+
+def test_a_refused_microphone_gives_no_glow(browser, server):
+    page = open_page(browser, server, REFUSED_MICROPHONE)
+    start_camera(page)
+    expect(page.locator("#message")).to_contain_text("microfono")
+    assert glow_state(page)["shown"] == 0

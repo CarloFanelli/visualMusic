@@ -40,3 +40,10 @@ Questo file registra solo ciò che è stato deciso o richiesto dall'utente.
 | 2026-11-09 | Un punto del suono viene evidenziato: il centro della campana o, se è nascosto, il punto medio tra i due bordi. |
 | 2026-11-09 | I punti dal vivo sono stabilizzati e restano fermi circa 0,2 secondi quando il modello li perde. |
 | 2026-11-09 | Come punto finale del progetto verrà distribuito il modello addestrato; fino ad allora si continua a migliorarlo. |
+| 2026-11-09 | Il primo effetto visivo è un bagliore attorno al punto del suono: più forte e grande con il volume, colore dal caldo nel grave al freddo nell'acuto. |
+| 2026-11-09 | Il bagliore si vede sopra l'immagine della webcam o del video, non su sfondo nero. |
+| 2026-11-09 | Con un video registrato il suono arriva dall'audio del video; con la webcam dal microfono. |
+| 2026-11-09 | Un tasto nasconde o mostra i punti del tracciamento, lasciando il bagliore. |
+| 2026-11-09 | Un piccolo grafico nell'angolo in basso a destra mostra il volume in orizzontale e la frequenza in verticale. |
+| 2026-11-09 | Il grafico mostra intervalli di frequenza in hertz, non i nomi delle note. |
+| 2026-11-09 | Altri effetti (anelli, particelle, scia, spettro, onda) sono segnati nel backlog per dopo. |

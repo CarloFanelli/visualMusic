@@ -112,6 +112,8 @@ Starts a page reachable only from this computer, using the latest trained model.
 
 Choose a camera or a video file. The page draws the points the model is confident about, and highlights in yellow the point where sound leaves the bell: its centre or, when that is hidden, the midpoint of the two edges. Nothing is saved.
 
+With a camera, sound comes from the microphone chosen on the same screen; with a video, from the video's own audio, which you also hear. A small chart in the bottom-right corner shows the volume horizontally and the frequency vertically, from 80 to 1600 Hz, with a trail of the last 2 seconds. A glow lights up on the bell, centred on the yellow point: it grows brighter and larger with the volume, shifts from warm orange in low frequencies to cold blue in high ones, and turns white for breath or key noise. **Nascondi punti** hides the tracked points to see the glow alone. If the microphone is refused or the video has no sound, tracking goes on without the chart and the glow.
+
 To judge the model, film a video it has never seen and open it here. Keep that video out of `data/videos/`, because everything in that folder ends up in training.
 
 ## Data in git
