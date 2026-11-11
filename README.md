@@ -93,11 +93,32 @@ Trains briefly on the exported dataset, then draws the predicted points on the v
 
 ## Train the model
 
-Trains for 100 passes on the exported dataset, always starting from the base model, and saves the result as `~/visualMusic-output/runs/latest.pt`. This takes about 30 minutes with 225 images on an M1 Pro, and longer with more. If training fails or you stop it, the previous model stays in use.
+Trains for 100 passes on the exported dataset, always starting from the base model, and saves the result as `~/visualMusic-output/runs/latest.pt`. Next to it, `latest.json` records which images the model learned from, the code version and the validation scores. This takes about 30 minutes with 225 images on an M1 Pro, and longer with more. If training fails or you stop it, the previous model stays in use.
 
 ```shell
 .venv/bin/python -m dataset_tools.train
 ```
+
+## Prepare the model for publication
+
+Builds `~/visualMusic-output/release/` with everything needed to publish the latest model in compliance with its licenses:
+
+- `visualMusic-saxophone-pose.pt`, the model;
+- `README.md`, the model card: what the model does, what it was trained on, its scores, limits, license and a link to the exact source code;
+- `CREDITS.md`, every image the model learned from, with its author, link and license. Frames from your videos are only counted, and video names never appear;
+- `LICENSE`, the AGPL-3.0 text.
+
+```shell
+.venv/bin/python -m dataset_tools.release
+```
+
+CC BY 2.0 to 3.0 licenses ask to credit the title the author gave to the image. Images collected before titles were recorded get them with this command, which reads the Open Images metadata again and takes several minutes:
+
+```shell
+.venv/bin/python -m dataset_tools.titles
+```
+
+The release stops if a CC BY image it would credit has no recorded title, and it stops if the model has no record of its training images, for example a model trained before this command existed: train it again first. Commit the code before training, so that the model card links source code that matches the model. Publish the four files together, for example as a GitHub release or on Hugging Face, after making the repository public and pushing the linked commit.
 
 ## Compute the proposals
 
@@ -131,7 +152,7 @@ The local pages are reachable only from this computer. Camera, microphone and vi
 
 Everything in `data/` stays on your computer and is never part of the repository: images, videos, the manifest `data/manifest.jsonl` and the annotations in `data/annotations/`. Run the tools above to build your own.
 
-Images are collected only under CC0, public domain or CC BY, as declared by each source. The manifest records, for every image, its source, author, license and a link to its original page, so the authors can be credited wherever the dataset or a model trained on it is shared. Each image keeps its own license. Sources may occasionally declare a wrong license: if you are the author of an image used to train a published model and want it removed, open an issue and it will be excluded from future trainings.
+Images are collected only under CC0, public domain or CC BY, as declared by each source. The manifest records, for every image, its source, title, author, license and a link to its original page, so the authors can be credited wherever the dataset or a model trained on it is shared. Each image keeps its own license. Sources may occasionally declare a wrong license: if you are the author of an image used to train a published model and want it removed, open an issue and it will be excluded from future trainings.
 
 ## Third-party software
 
@@ -153,4 +174,4 @@ Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 Copyright (C) 2026 Carlo Fanelli.
 
 - **Code**: [GNU Affero General Public License v3.0](LICENSE). The project depends on Ultralytics YOLO, licensed under AGPL-3.0, so any distribution of the project, or of a modified version, must keep the same license and provide its source code — including when a modified version is offered to others over a network.
-- **Trained models** are produced with Ultralytics YOLO and are distributed under AGPL-3.0, together with the list of the authors of the images they were trained on.
+- **Trained models** are produced with Ultralytics YOLO and are distributed under AGPL-3.0, together with their model card and the list of the authors of the images they were trained on, as prepared by `dataset_tools.release`.

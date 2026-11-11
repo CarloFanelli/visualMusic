@@ -61,6 +61,7 @@ def _record(candidate, family, file_name, sha256, today):
         "license": family,
         "license_raw": candidate.license_raw,
         "license_url": candidate.license_url,
+        "title": candidate.title,
         "collected_on": today,
         "sha256": sha256,
         "file": file_name,

@@ -39,6 +39,7 @@ def candidate(key, license_raw="CC BY 4.0", author="Ann", **overrides):
         author=author,
         license_raw=license_raw,
         license_url="https://creativecommons.org/licenses/by/4.0",
+        title=f"Photo {key}",
     )
     values.update(overrides)
     return Candidate(**values)
@@ -81,6 +82,7 @@ def test_kept_image_has_a_complete_record_and_its_file(run):
         "license": "cc-by",
         "license_raw": "CC BY 4.0",
         "license_url": "https://creativecommons.org/licenses/by/4.0",
+        "title": "Photo a",
         "collected_on": "2026-11-08",
         "sha256": hashlib.sha256(http.files["https://file.example/a"]).hexdigest(),
         "file": "test-a.jpg",

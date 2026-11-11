@@ -1,3 +1,5 @@
+import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -42,11 +44,18 @@ def layout(tmp_path):
     data_yaml = tmp_path / "export" / "data.yaml"
     data_yaml.parent.mkdir()
     data_yaml.write_text("path: x\n")
-    return SimpleNamespace(data_yaml=data_yaml, runs=tmp_path / "runs", model=tmp_path / "runs" / "latest.pt")
+    return SimpleNamespace(data_yaml=data_yaml, runs=tmp_path / "runs", model=tmp_path / "runs" / "latest.pt", info=tmp_path / "runs" / "latest.json")
 
 
 def run(layout, device="cpu"):
-    return train.run(layout.data_yaml, layout.runs, layout.model, FakeModel, device)
+    return train.run(layout.data_yaml, layout.runs, layout.model, FakeModel, device, layout.info)
+
+
+def add_exported_images(layout, split, *names):
+    folder = layout.data_yaml.parent / "images" / split
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (folder / name).write_bytes(b"image")
 
 
 def test_training_runs_for_all_passes_from_the_base_model(layout):
@@ -116,3 +125,48 @@ def test_command_explains_a_stop_and_fails(error, monkeypatch, capsys):
     monkeypatch.setattr(train, "run", stop)
     assert train.main() == 1
     assert "previous model" in capsys.readouterr().out
+
+
+def test_training_records_what_the_model_learned_from(layout):
+    add_exported_images(layout, "train", "b.jpg", "a.jpg")
+    add_exported_images(layout, "val", "c.jpg")
+    run(layout)
+    info = json.loads(layout.info.read_text())
+    assert info["images"] == {"train": ["a.jpg", "b.jpg"], "val": ["c.jpg"]}
+    assert info["model_sha256"] == hashlib.sha256(b"new model").hexdigest()
+    assert info["base_model"] == trial.WEIGHTS
+    assert info["epochs"] == 100
+
+
+def test_training_records_the_best_validation_scores(layout):
+    results = layout.runs / train.RUN_NAME / "results.csv"
+    results.parent.mkdir(parents=True)
+    results.write_text(
+        "epoch,  metrics/mAP50(P),  metrics/mAP50-95(P)\n"
+        "1,0.5,0.3\n"
+        "2,0.9,0.8\n"
+        "3,0.85,0.7\n"
+    )
+    run(layout)
+    assert json.loads(layout.info.read_text())["metrics"] == {"epoch": 2, "pose_map50": 0.9, "pose_map50_95": 0.8}
+
+
+def test_training_records_no_scores_when_there_are_none(layout):
+    run(layout)
+    assert json.loads(layout.info.read_text())["metrics"] is None
+
+
+def test_training_records_the_code_version(layout, monkeypatch):
+    monkeypatch.setattr(train, "code_version", lambda: ("abc123", True))
+    run(layout)
+    info = json.loads(layout.info.read_text())
+    assert (info["code_commit"], info["code_changed"]) == ("abc123", True)
+
+
+def test_failed_training_leaves_the_previous_record(layout):
+    layout.info.parent.mkdir()
+    layout.info.write_text("old record")
+    FakeModel.always_fails = True
+    with pytest.raises(RuntimeError):
+        run(layout)
+    assert layout.info.read_text() == "old record"

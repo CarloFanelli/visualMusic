@@ -21,3 +21,6 @@ OUTPUT = Path.home() / "visualMusic-output"
 EXPORT = OUTPUT / "export"
 RUNS = OUTPUT / "runs"
 LATEST_MODEL = RUNS / "latest.pt"
+# What the latest model was trained on, needed to credit image authors when it is published.
+LATEST_INFO = RUNS / "latest.json"
+RELEASE = OUTPUT / "release"

@@ -73,7 +73,7 @@ def open_images_http():
     for number, (annotations_url, metadata_url) in enumerate(open_images.SPLITS):
         rows[annotations_url] = [{"ImageID": f"s{number}", "LabelName": open_images.SAXOPHONE_LABEL}, {"ImageID": "other", "LabelName": "/m/x"}]
         rows[metadata_url] = [
-            {"ImageID": f"s{number}", "Subset": "train", "OriginalLandingURL": "https://flickr.example/1", "License": "https://creativecommons.org/licenses/by/2.0/", "Author": "Ann"},
+            {"ImageID": f"s{number}", "Subset": "train", "OriginalLandingURL": "https://flickr.example/1", "License": "https://creativecommons.org/licenses/by/2.0/", "Author": "Ann", "Title": " Night gig "},
             {"ImageID": "other", "Subset": "train", "OriginalLandingURL": "x", "License": "x", "Author": "x"},
         ]
     return FakeHttp(csv_rows=rows)
@@ -84,6 +84,12 @@ def test_open_images_keeps_only_saxophones(tmp_path):
     assert [c.image_id for c in found] == ["openimages-s0", "openimages-s1", "openimages-s2"]
     assert found[0].download_url == "https://s3.amazonaws.com/open-images-dataset/train/s0.jpg"
     assert found[0].author == "Ann"
+    assert found[0].title == "Night gig"
+
+
+def test_open_images_cache_from_before_titles_leaves_titles_unknown(tmp_path):
+    open_images.write_cache([{"ImageID": "s0", "Subset": "train", "OriginalLandingURL": "u", "License": "l", "Author": "Ann"}], tmp_path)
+    assert next(open_images.candidates(FakeHttp(), [], tmp_path)).title is None
 
 
 def test_open_images_second_run_downloads_no_csv(tmp_path):
@@ -106,7 +112,12 @@ def test_open_images_failed_download_leaves_no_cache(tmp_path):
 
 
 def openverse_result(result_id, license_name="by"):
-    return {"id": result_id, "url": f"https://img.example/{result_id}.jpg", "foreign_landing_url": "https://page.example", "creator": "Ann", "license": license_name, "license_url": "https://creativecommons.org/licenses/by/2.0/"}
+    return {"id": result_id, "url": f"https://img.example/{result_id}.jpg", "foreign_landing_url": "https://page.example", "creator": "Ann", "license": license_name, "license_url": "https://creativecommons.org/licenses/by/2.0/", "title": "Tenor"}
+
+
+def test_openverse_keeps_the_title():
+    http = FakeHttp([{"results": [openverse_result("a")], "page_count": 1}, {"results": [], "page_count": 0}])
+    assert next(openverse.candidates(http, [])).title == "Tenor"
 
 
 def test_openverse_stops_at_the_anonymous_limit_and_reports_it():
@@ -133,3 +144,7 @@ def test_openverse_says_rejected_licenses_are_filtered_at_source():
 
 def test_author_ending_in_an_unfinished_entity_is_kept():
     assert commons.author_from_html("AT&T") == "AT&T"
+
+
+def test_commons_title_is_the_file_name():
+    assert commons._candidate(commons_page(1, "File:Tenor sax.jpg")).title == "Tenor sax.jpg"

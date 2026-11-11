@@ -14,10 +14,12 @@ _Avoid_: prediction, for points shown on the page; annotation, which is reserved
 - **A reopened image is corrected, not marked again**: it shows its saved points, which move as on a **proposal**, and nothing changes until the user confirms. Why: a small fix should not cost four clicks, and a stray click must not overwrite saved work.
 - **Skipped images wait for a button**: when pending images run out, the page shows the skipped count and a button to resume them. Why: it keeps both the return of skipped images and the completion message.
 
+- **A published model carries its credits**: every model release includes a model card, the AGPL-3.0 text and the credits of every image it learned from, taken from the record that training saves next to the model. Why: CC BY licenses require crediting authors, and Ultralytics' AGPL-3.0 applies to trained models.
+
 ## Gotchas
 
 - **Manifest paths are untrusted**: the manifest can be edited by hand or come from someone else, so a `file` value like `../x.jpg` can delete or overwrite files outside the data folders. Code that writes or deletes through this field must first require a plain file name.
-- **License names need exact matching**: `CC BY SA 4.0` and `CC BY 4.0 NC` once passed as plain CC BY, one because only the second word was read and one because `NC` looked like a country code. Add any new license form to the rejection tests too.
+- **License names need exact matching**: `CC BY SA 4.0` and `CC BY 4.0 NC` once passed as plain CC BY, one because only the second word was read and one because `NC` looked like a country code. Add any new license form to the rejection tests too. Country codes in license links need the same care: in `.../zero/1.0/deed.en` the `de` of `deed` once read as Germany.
 - **The browser keeps the old image while the next one loads**: a click in that moment lands on the wrong image without any error. Check that the image has finished loading before accepting a point.
 - **Wikimedia limits file downloads hard**: `upload.wikimedia.org` imposed a 600-second wait when asked for one file per second, so that host needs a longer interval than the others.
 - **Delaying a page load in Playwright tests**: a sleep inside a route handler blocks Playwright itself, so the image finishes loading before the next click and the test proves nothing. Hold the route and release it after the click.

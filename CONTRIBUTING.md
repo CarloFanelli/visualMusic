@@ -14,7 +14,7 @@ Thanks for your interest in visualMusic. Issues and pull requests are welcome.
 ## Rules for images and videos
 
 - Never commit images, videos, model weights or anything in `data/`: `.gitignore` blocks them, and pull requests containing them will not be merged.
-- New image sources must offer only CC0, public domain or CC BY images, and record author, license and source link for each image in the manifest.
+- New image sources must offer only CC0, public domain or CC BY images, and record title, author, license and source link for each image in the manifest.
 - Add frames only from videos you own or have the rights to use, and never add images of people who have not agreed to it.
 
 ## Licensing of contributions

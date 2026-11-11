@@ -42,6 +42,7 @@ def _candidate(page):
         author=author_from_html(metadata.get("Artist", {}).get("value")),
         license_raw=metadata.get("LicenseShortName", {}).get("value"),
         license_url=metadata.get("LicenseUrl", {}).get("value") or info.get("descriptionurl"),
+        title=page.get("title", "").removeprefix("File:"),
         unsupported_reason=None if mime in SUPPORTED_MIME else "unsupported-format",
     )
 

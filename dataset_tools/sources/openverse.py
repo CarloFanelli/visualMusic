@@ -20,6 +20,7 @@ def _candidate(result):
         author=(result.get("creator") or "").strip() or None,
         license_raw=result.get("license"),
         license_url=result.get("license_url"),
+        title=(result.get("title") or "").strip(),
     )
 
 

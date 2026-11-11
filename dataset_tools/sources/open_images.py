@@ -9,7 +9,7 @@ NAME = "Open Images"
 SAXOPHONE_LABEL = "/m/06ncr"
 CACHE_FILE = "open_images_saxophone.jsonl"
 FILE_URL = "https://s3.amazonaws.com/open-images-dataset/{subset}/{image_id}.jpg"
-PAGE_KEPT_FIELDS = ["ImageID", "Subset", "OriginalLandingURL", "License", "Author"]
+PAGE_KEPT_FIELDS = ["ImageID", "Subset", "OriginalLandingURL", "License", "Author", "Title"]
 
 _BASE = "https://storage.googleapis.com/openimages"
 SPLITS = [
@@ -38,13 +38,18 @@ def _load_rows(http, cache_directory):
         with open(cache, encoding="utf-8") as file:
             return [json.loads(line) for line in file]
     rows = _fetch_saxophone_rows(http)
+    write_cache(rows, cache_directory)
+    return rows
+
+
+def write_cache(rows, cache_directory=paths.CACHE):
+    cache = cache_directory / CACHE_FILE
     cache_directory.mkdir(parents=True, exist_ok=True)
     temporary = cache.with_suffix(".part")
     with open(temporary, "w", encoding="utf-8") as file:
         for row in rows:
             file.write(json.dumps(row, ensure_ascii=False) + "\n")
     os.replace(temporary, cache)
-    return rows
 
 
 def candidates(http, notes, cache_directory=paths.CACHE):
@@ -57,4 +62,5 @@ def candidates(http, notes, cache_directory=paths.CACHE):
             author=(row.get("Author") or "").strip() or None,
             license_raw=row["License"],
             license_url=row["License"],
+            title=(row.get("Title") or "").strip() if "Title" in row else None,
         )

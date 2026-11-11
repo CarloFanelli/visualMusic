@@ -52,3 +52,4 @@ Questo file registra solo ciò che è stato deciso o richiesto dall'utente.
 | 2026-11-11 | Le annotazioni, l'elenco delle immagini e gli altri dati personali restano solo su questo computer, fuori da git, anche nel vecchio repository. |
 | 2026-11-11 | Il primo sviluppo resta archiviato nel repository privato `visualMusic-firstDevelopment`; il lavoro continua in un nuovo repository `visualMusic` che parte pulito. |
 | 2026-11-11 | Gli indirizzi email personali non devono comparire da nessuna parte: i commit usano l'indirizzo privato di GitHub. |
+| 2026-11-11 | Il modello addestrato si potrà pubblicare con licenza AGPL-3.0, insieme a una scheda che lo descrive, ai crediti di tutti gli autori delle immagini e al testo della licenza. |

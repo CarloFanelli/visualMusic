@@ -38,6 +38,17 @@ def load(path=paths.MANIFEST, repair=True):
     return records
 
 
+def rewrite(records, path=paths.MANIFEST):
+    """Replaces the whole manifest at once, so an interruption leaves the previous one intact."""
+    temporary = path.with_name(f".{path.name}.part")
+    with open(temporary, "w", encoding="utf-8") as file:
+        for record in records:
+            file.write(json.dumps(record, ensure_ascii=False) + "\n")
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temporary, path)
+
+
 def append(record, path=paths.MANIFEST):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as file:
