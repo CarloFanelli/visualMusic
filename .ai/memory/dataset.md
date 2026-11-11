@@ -16,7 +16,7 @@ _Avoid_: prediction, for points shown on the page; annotation, which is reserved
 
 ## Gotchas
 
-- **Manifest paths are untrusted**: the manifest is versioned and can come from a contributor, so a `file` value like `../x.jpg` can delete or overwrite files outside the data folders. Code that writes or deletes through this field must first require a plain file name.
+- **Manifest paths are untrusted**: the manifest can be edited by hand or come from someone else, so a `file` value like `../x.jpg` can delete or overwrite files outside the data folders. Code that writes or deletes through this field must first require a plain file name.
 - **License names need exact matching**: `CC BY SA 4.0` and `CC BY 4.0 NC` once passed as plain CC BY, one because only the second word was read and one because `NC` looked like a country code. Add any new license form to the rejection tests too.
 - **The browser keeps the old image while the next one loads**: a click in that moment lands on the wrong image without any error. Check that the image has finished loading before accepting a point.
 - **Wikimedia limits file downloads hard**: `upload.wikimedia.org` imposed a 600-second wait when asked for one file per second, so that host needs a longer interval than the others.

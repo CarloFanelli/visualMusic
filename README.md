@@ -1,6 +1,13 @@
 # visualMusic
 
-Tracks the point where sound leaves a musical instrument, starting with the saxophone.
+Tracks the point where sound leaves a musical instrument, starting with the tenor saxophone, and draws visual effects there from the sound being played.
+
+The project has two parts:
+
+- **Dataset tools** collect openly licensed saxophone images, let you mark four points on each one in a local page, and train an Ultralytics YOLO pose model on them.
+- **Live tracking** follows the saxophone from a camera or a video in the browser, and lights a glow on the bell driven by the volume and frequency of the sound.
+
+Everything runs on your own computer: no image, video or sound is sent anywhere.
 
 ## Setup
 
@@ -116,10 +123,34 @@ With a camera, sound comes from the microphone chosen on the same screen; with a
 
 To judge the model, film a video it has never seen and open it here. Keep that video out of `data/videos/`, because everything in that folder ends up in training.
 
-## Data in git
+## Privacy
 
-The manifest and annotations are versioned. Image and video files are not.
+The local pages are reachable only from this computer. Camera, microphone and video are processed in the browser and on this computer; nothing is recorded, saved or sent anywhere, and the microphone is turned off when tracking stops. The only network access is downloading images from their public sources, the base model from Ultralytics, and the Python packages during setup.
 
-## License note
+## Data and attribution
 
-This project trains models with Ultralytics YOLO, licensed under AGPL-3.0. If the project is distributed or offered online, its code must be released under the same license.
+Everything in `data/` stays on your computer and is never part of the repository: images, videos, the manifest `data/manifest.jsonl` and the annotations in `data/annotations/`. Run the tools above to build your own.
+
+Images are collected only under CC0, public domain or CC BY, as declared by each source. The manifest records, for every image, its source, author, license and a link to its original page, so the authors can be credited wherever the dataset or a model trained on it is shared. Each image keeps its own license. Sources may occasionally declare a wrong license: if you are the author of an image used to train a published model and want it removed, open an issue and it will be excluded from future trainings.
+
+## Third-party software
+
+| Component | Used for | License |
+|-----------|----------|---------|
+| [Ultralytics YOLO](https://github.com/ultralytics/ultralytics) and its pretrained pose model | Training and running the model | AGPL-3.0 |
+| [PyTorch](https://pytorch.org), [NumPy](https://numpy.org), [OpenCV](https://opencv.org) (installed with Ultralytics) | Computation and video frames | BSD-style / Apache-2.0 |
+| [pytest](https://pytest.org) | Tests | MIT |
+| [Playwright](https://playwright.dev) | Browser tests | Apache-2.0 |
+
+These packages are installed from PyPI by `scripts/setup.sh` and are not included in the repository.
+
+## Contributing
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+Copyright (C) 2026 Carlo Fanelli.
+
+- **Code**: [GNU Affero General Public License v3.0](LICENSE). The project depends on Ultralytics YOLO, licensed under AGPL-3.0, so any distribution of the project, or of a modified version, must keep the same license and provide its source code — including when a modified version is offered to others over a network.
+- **Trained models** are produced with Ultralytics YOLO and are distributed under AGPL-3.0, together with the list of the authors of the images they were trained on.

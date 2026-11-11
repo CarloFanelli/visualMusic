@@ -3,14 +3,15 @@
 __pycache__/
 .pytest_cache/
 
-# Image and video files stay local; the manifest and annotations are versioned
+# Personal data stays local: images, videos, the manifest and the annotations
 data/images/
 data/videos/
 data/previews/
 data/cache/
 data/export/
 data/proposals/
-data/annotations/*.part
+data/annotations/
+data/manifest.jsonl
 
 # Images and videos never go to GitHub, wherever they are saved
 *.[jJ][pP][gG]

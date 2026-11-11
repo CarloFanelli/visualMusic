@@ -20,15 +20,12 @@ def is_ignored(path):
         "data/export/images/train/photo.jpg",
         "data/proposals/photo.json",
         "data/annotations/.photo.abc123.part",
+        "data/annotations/photo.json",
+        "data/manifest.jsonl",
         "screenshot.jpg",
         "docs/photo.PNG",
         "tests/clip.Mp4",
     ],
 )
-def test_image_and_video_files_stay_out_of_git(path):
+def test_personal_data_stays_out_of_git(path):
     assert is_ignored(path)
-
-
-@pytest.mark.parametrize("path", ["data/manifest.jsonl", "data/annotations/photo.json"])
-def test_manifest_and_annotations_can_be_committed(path):
-    assert not is_ignored(path)

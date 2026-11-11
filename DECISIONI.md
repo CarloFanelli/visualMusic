@@ -47,3 +47,8 @@ Questo file registra solo ciò che è stato deciso o richiesto dall'utente.
 | 2026-11-09 | Un piccolo grafico nell'angolo in basso a destra mostra il volume in orizzontale e la frequenza in verticale. |
 | 2026-11-09 | Il grafico mostra intervalli di frequenza in hertz, non i nomi delle note. |
 | 2026-11-09 | Altri effetti (anelli, particelle, scia, spettro, onda) sono segnati nel backlog per dopo. |
+| 2026-11-11 | Il repository si prepara per essere pubblico, nel rispetto delle licenze e della legge. |
+| 2026-11-11 | Il codice è pubblicato con licenza AGPL-3.0, la stessa di YOLO di Ultralytics. |
+| 2026-11-11 | Le annotazioni, l'elenco delle immagini e gli altri dati personali restano solo su questo computer, fuori da git, anche nel vecchio repository. |
+| 2026-11-11 | Il primo sviluppo resta archiviato nel repository privato `visualMusic-firstDevelopment`; il lavoro continua in un nuovo repository `visualMusic` che parte pulito. |
+| 2026-11-11 | Gli indirizzi email personali non devono comparire da nessuna parte: i commit usano l'indirizzo privato di GitHub. |
