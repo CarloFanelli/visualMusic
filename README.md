@@ -134,6 +134,8 @@ Proposals stay in `data/proposals/`, are not versioned, and never reach the expo
 
 Starts a page reachable only from this computer, using the latest trained model. Stop it with Ctrl+C.
 
+To use the published model instead of training your own, download it from the [releases](https://github.com/CarloFanelli/visualMusic/releases) and save it as `~/visualMusic-output/runs/latest.pt`. Its model card and credits are published with it, and must accompany any copy you share.
+
 ```shell
 .venv/bin/python -m live_tracking.server
 ```
