@@ -1,0 +1,34 @@
+name: Image removal request
+description: Ask to leave one of your images out of future versions of the published model.
+title: "Image removal: "
+labels: ["image-removal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If you are the author of an image listed in the credits of a published model, or act for its author, you can ask for it to be removed. It will be left out of every future training and every future version of the model.
+
+        Do not write personal contact details here: this page is public, and the reply will come in this issue.
+  - type: input
+    id: link
+    attributes:
+      label: Link to the image
+      description: The link shown for the image in CREDITS.md, for example its Flickr or Wikimedia Commons page.
+    validations:
+      required: true
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Your relationship to the image
+      options:
+        - I am its author
+        - I act for its author
+        - I appear in it
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Anything else
+      description: For example, if the license declared by the source is wrong.

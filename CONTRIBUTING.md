@@ -23,4 +23,4 @@ By submitting a contribution you confirm that you wrote it or have the right to 
 
 ## Removal requests
 
-If you are the author of an image used to train a published model and want it removed, open an issue with its link: it will be excluded from future trainings.
+If you are the author of an image used to train a published model and want it removed, [open a removal request](https://github.com/CarloFanelli/visualMusic/issues/new?template=image-removal.yml) with its link: it will be left out of future versions of the model.
