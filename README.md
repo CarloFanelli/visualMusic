@@ -2,7 +2,7 @@
 
 Follows a saxophone on camera, finds the point where the sound leaves the bell, and lights a glow there that changes with the volume and frequency of what you play.
 
-<!-- Demo video: paste it here. -->
+[![Demo: a saxophone tracked live, with a glow on the bell driven by the sound](https://img.youtube.com/vi/pCgo1q731cY/maxresdefault.jpg)](https://www.youtube.com/watch?v=pCgo1q731cY)
 
 Everything runs on your own computer: no image, video or sound is sent anywhere. The pages are in Italian.
 
